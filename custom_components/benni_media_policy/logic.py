@@ -27,8 +27,9 @@ class Inputs:
     media_device: str | None = None
     entertainment_active: bool | None = None
     headset_active: bool | None = None
-    quiet_requested: bool | None = None
-    # TODO(step2): um die echten Policy-Inputs erweitern (Volume-Profile, Owner-Arbitrierung)
+    # Quiet wird aus media_state (L1, FLEET-31) konsumiert — hier nur Eingang.
+    quiet_mode: bool | None = None
+    # TODO(phase3): um die echten Policy-Inputs erweitern (Volume-Profile, Owner-Arbitrierung)
 
 
 @dataclass
@@ -41,7 +42,6 @@ class PolicyDecision:
     action: str = DEFAULT_ACTION
     volume_policy: str | None = None
     subwoofer_allowed: bool = False
-    quiet_mode: bool = False
     homepods_should_pause: bool = False
     homepods_resume_allowed: bool = False
     volume_apply_allowed: bool = False
@@ -54,7 +54,6 @@ class PolicyDecision:
             "action": self.action,
             "volume_policy": self.volume_policy,
             "subwoofer_allowed": self.subwoofer_allowed,
-            "quiet_mode": self.quiet_mode,
             "homepods_should_pause": self.homepods_should_pause,
             "homepods_resume_allowed": self.homepods_resume_allowed,
             "volume_apply_allowed": self.volume_apply_allowed,
@@ -70,7 +69,7 @@ def decide(inputs: Inputs, *, apply_enabled: bool = False) -> PolicyDecision:
     Step 1: liefert stabile Defaults, damit die Policy lädt und Panel/Entities
     eine Payload haben. Noch kein Verhalten.
     """
-    # TODO(step2): decide()-Body aus benni_media_context (orchestrator/volume_orchestrator) extrahieren
-    # TODO(step3-lastenheft): Konsum-Vertrag media_policy -> media_state via Entity-State
-    # TODO(step3-lastenheft): B2 — gaming nur bei classifier-Enum >= 1 (Detection bleibt in media_state)
+    # TODO(phase3): decide()-Body aus benni_media_context (orchestrator/volume_orchestrator) extrahieren
+    # TODO(phase4): Konsum-Vertrag media_policy -> media_state via Entity-State final verdrahten
+    # TODO(phase3): B2 — gaming-Detection bleibt in media_state; Policy konsumiert nur
     return PolicyDecision()
