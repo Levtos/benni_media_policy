@@ -22,11 +22,10 @@ DATA_COORDINATOR: Final[str] = "coordinator"
 
 STORAGE_VERSION: Final[int] = 1
 
-SINGLETON_UNIQUE_ID: Final[str] = f"{DOMAIN}_singleton"
 
-
-def unique_id(*parts: str) -> str:
-    return "_".join((DOMAIN, *parts))
+def unique_id(entry_id: str, suffix: str) -> str:
+    """Domain- + entry-scoped unique_id (core_state-Blaupause, kollisionsfrei)."""
+    return f"{DOMAIN}_{entry_id}_{suffix}"
 
 
 # --------------------------------------------------------------------------- #
@@ -35,7 +34,7 @@ def unique_id(*parts: str) -> str:
 CONF_PROFILE: Final[str] = "profile"
 PROFILE_BENNI: Final[str] = "benni"
 PROFILE_ELTERN: Final[str] = "eltern"
-PROFILES: Final[tuple[str, ...]] = (PROFILE_BENNI, PROFILE_ELTERN)
+PROFILES: Final[list[str]] = [PROFILE_BENNI, PROFILE_ELTERN]
 DEFAULT_PROFILE: Final[str] = PROFILE_BENNI
 PROFILE_LABELS: Final[dict[str, str]] = {PROFILE_BENNI: "Benni", PROFILE_ELTERN: "Eltern"}
 
@@ -64,11 +63,14 @@ WATCH_KEYS: Final[tuple[str, ...]] = (
 )
 
 # --------------------------------------------------------------------------- #
-# Profil-Map (Auto-Bind). Für benni werden die benni_media_state-Entities
-# vorbelegt (Konsum-Vertrag via Entity-State). eltern bekommt später eine
-# eigene media_state-Instanz → vorläufig leer (fällt sauber auf "leer" zurück).
-# Greift nur, wenn die Entity in HA existiert.
-# TODO(step3-lastenheft): Konsum-Vertrag media_policy -> media_state via Entity-State festklopfen
+# Profil-Map (Auto-Bind, core_state-Blaupause). Pro Route zeigt sie auf die
+# media_state-Entities DESSELBEN Profils (Konsum-Vertrag via Entity-State):
+#   benni  → sensor.benni_media_state_*   (gefüllt)
+#   eltern → sensor.eltern_media_state_*  (vorerst leer — Eltern-media_state-
+#            Instanz existiert noch nicht; Existenz-Filter regelt die
+#            Deploy-Reihenfolge, KEINE harten Fallback-Slugs).
+# Greift nur, wenn die Entity in dieser HA existiert.
+# TODO(phase4): Konsum-Vertrag media_policy -> media_state final verdrahten.
 # --------------------------------------------------------------------------- #
 PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
     PROFILE_BENNI: {
@@ -89,6 +91,7 @@ DEFAULT_APPLY_ENABLED: Final[bool] = False   # Shadow-safe out of the box.
 # --------------------------------------------------------------------------- #
 # Default-data (bis die Logik existiert — Step 2). Spiegelt das Entity-Roster.
 # --------------------------------------------------------------------------- #
+# quiet_mode lebt jetzt in media_state (L1, FLEET-31) — hier KEIN quiet-Feld mehr.
 DEFAULT_DATA: Final[dict[str, Any]] = {
     "volume_target_homepods": None,
     "volume_target_denon": None,
@@ -96,7 +99,6 @@ DEFAULT_DATA: Final[dict[str, Any]] = {
     "action": "none",
     "volume_policy": None,
     "subwoofer_allowed": False,
-    "quiet_mode": False,
     "homepods_should_pause": False,
     "homepods_resume_allowed": False,
     "volume_apply_allowed": False,
@@ -112,9 +114,8 @@ UID_VOLUME_TARGET_DENON: Final[str] = "volume_target_denon"
 UID_AUDIO_OWNER: Final[str] = "audio_owner"
 UID_ACTION: Final[str] = "action"
 UID_VOLUME_POLICY: Final[str] = "volume_policy"
-# binary_sensors
+# binary_sensors  (quiet_mode entfernt → lebt in media_state, L1/FLEET-31)
 UID_SUBWOOFER_ALLOWED: Final[str] = "subwoofer_allowed"
-UID_QUIET_MODE: Final[str] = "quiet_mode"
 UID_HOMEPODS_SHOULD_PAUSE: Final[str] = "homepods_should_pause"
 UID_HOMEPODS_RESUME_ALLOWED: Final[str] = "homepods_resume_allowed"
 UID_VOLUME_APPLY_ALLOWED: Final[str] = "volume_apply_allowed"

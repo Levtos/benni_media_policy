@@ -13,13 +13,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    CONF_PROFILE,
+    DEFAULT_PROFILE,
     DOMAIN,
-    NAME,
+    PROFILE_LABELS,
     UID_ACTION,
     UID_AUDIO_OWNER,
     UID_HOMEPODS_RESUME_ALLOWED,
     UID_HOMEPODS_SHOULD_PAUSE,
-    UID_QUIET_MODE,
     UID_SUBWOOFER_ALLOWED,
     UID_VOLUME_APPLY_ALLOWED,
     UID_VOLUME_POLICY,
@@ -47,9 +48,9 @@ SENSORS: tuple[FieldDesc, ...] = (
     FieldDesc("volume_policy", UID_VOLUME_POLICY, "Volume Policy", "mdi:tune-variant"),
 )
 
+# quiet_mode entfernt → lebt in media_state (L1, FLEET-31), Policy konsumiert es.
 BINARY_SENSORS: tuple[FieldDesc, ...] = (
     FieldDesc("subwoofer_allowed", UID_SUBWOOFER_ALLOWED, "Subwoofer Allowed", "mdi:speaker-wireless"),
-    FieldDesc("quiet_mode", UID_QUIET_MODE, "Quiet Mode", "mdi:volume-low"),
     FieldDesc("homepods_should_pause", UID_HOMEPODS_SHOULD_PAUSE, "HomePods Should Pause", "mdi:pause-octagon"),
     FieldDesc("homepods_resume_allowed", UID_HOMEPODS_RESUME_ALLOWED, "HomePods Resume Allowed", "mdi:play-circle"),
     FieldDesc("volume_apply_allowed", UID_VOLUME_APPLY_ALLOWED, "Volume Apply Allowed", "mdi:lock-open-check"),
@@ -57,11 +58,16 @@ BINARY_SENSORS: tuple[FieldDesc, ...] = (
 
 
 def device_info(entry: ConfigEntry) -> dict[str, Any]:
+    # Der Device-Name bestimmt bei has_entity_name den Entity-Slug:
+    #   "Benni Media Policy"  → sensor.benni_media_policy_*
+    #   "Eltern Media Policy" → sensor.eltern_media_policy_*
+    profile = entry.data.get(CONF_PROFILE, DEFAULT_PROFILE)
+    label = PROFILE_LABELS.get(profile, "Benni")
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": NAME,
+        "name": f"{label} Media Policy",
         "manufacturer": "Benni",
-        "model": "Media Policy (Audio-Owner)",
+        "model": f"Media Policy · {label}",
     }
 
 
@@ -75,9 +81,10 @@ class MediaPolicyEntity(CoordinatorEntity[MediaPolicyCoordinator]):
     ) -> None:
         super().__init__(coordinator)
         self._desc = desc
-        self._attr_unique_id = unique_id(desc.uid)
+        self._attr_unique_id = unique_id(entry.entry_id, desc.uid)
         self._attr_name = desc.name
-        self._attr_suggested_object_id = unique_id(desc.uid)
+        # Kein suggested_object_id: der Slug kommt aus dem profil-getriebenen
+        # Device-Namen (has_entity_name) → <profil>_media_policy_<type>.
         if desc.icon:
             self._attr_icon = desc.icon
         self._attr_device_info = device_info(entry)

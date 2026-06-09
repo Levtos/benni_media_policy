@@ -41,9 +41,11 @@ def test_decide_stub_returns_defaults():
     assert data["action"] == "none"
     assert data["volume_apply_allowed"] is False
     assert data["subwoofer_allowed"] is False
+    # quiet_mode lebt jetzt in media_state (L1, FLEET-31) — NICHT mehr hier.
+    assert "quiet_mode" not in data
     for key in (
         "volume_target_homepods", "volume_target_denon", "audio_owner", "action",
-        "volume_policy", "subwoofer_allowed", "quiet_mode", "homepods_should_pause",
+        "volume_policy", "subwoofer_allowed", "homepods_should_pause",
         "homepods_resume_allowed", "volume_apply_allowed",
     ):
         assert key in data

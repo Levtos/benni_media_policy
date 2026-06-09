@@ -77,17 +77,23 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def apply_enabled(self) -> bool:
         return bool(self._opts.get(CONF_APPLY_ENABLED, DEFAULT_APPLY_ENABLED))
 
-    def bound_entity(self, key: str) -> Any:
-        """Auto-Bind: Override (Config) ▶ Profil-Map ▶ leer."""
-        override = self._opts.get(key)
-        if override:
-            return override
-        return PROFILE_PREFILL.get(self._profile, {}).get(key)
+    def _entity_id(self, key: str) -> Any:
+        """Auto-Bind (core_state-Blaupause): options ▶ data ▶ PROFILE_PREFILL[profile].
+
+        Override (options/data) gewinnt, sonst die Profil-Map aus dem Code; so
+        propagieren Map-Updates aus dem Repo auf alle Anlagen, die den Slot nicht
+        überschrieben haben.
+        """
+        return (
+            self.entry.options.get(key)
+            or self.entry.data.get(key)
+            or PROFILE_PREFILL.get(self._profile, {}).get(key)
+        )
 
     def _watched_entities(self) -> list[str]:
         ids: list[str] = []
         for key in WATCH_KEYS:
-            val = self.bound_entity(key)
+            val = self._entity_id(key)
             if isinstance(val, str) and val:
                 ids.append(val)
             elif isinstance(val, (list, tuple)):
@@ -96,7 +102,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def bindings(self) -> dict[str, Any]:
         """Aktuelle Auflösung aller WATCH_KEYS — für Panel/Diagnose."""
-        return {key: self.bound_entity(key) for key in WATCH_KEYS}
+        return {key: self._entity_id(key) for key in WATCH_KEYS}
 
     # ----- lifecycle -----
     @callback
@@ -115,13 +121,13 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # ----- evaluation -----
     def _build_inputs(self) -> logic.Inputs:
         return logic.Inputs(
-            media_context=_state(self.hass, self.bound_entity(CONF_MEDIA_CONTEXT)),
-            media_device=_state(self.hass, self.bound_entity(CONF_MEDIA_DEVICE)),
+            media_context=_state(self.hass, self._entity_id(CONF_MEDIA_CONTEXT)),
+            media_device=_state(self.hass, self._entity_id(CONF_MEDIA_DEVICE)),
             entertainment_active=_bool_state(
-                _state(self.hass, self.bound_entity(CONF_ENTERTAINMENT_ACTIVE))
+                _state(self.hass, self._entity_id(CONF_ENTERTAINMENT_ACTIVE))
             ),
             headset_active=_bool_state(
-                _state(self.hass, self.bound_entity(CONF_HEADSET_ACTIVE))
+                _state(self.hass, self._entity_id(CONF_HEADSET_ACTIVE))
             ),
         )
 

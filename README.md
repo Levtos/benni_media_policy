@@ -26,14 +26,17 @@ L2 Policy — Teil des `benni_*`-Fleets. Entsteht im 1→2-Split aus
 | `sensor.benni_media_policy_action` | nächste Aktion (pause/resume/radio/none) |
 | `sensor.benni_media_policy_volume_policy` | aktive Volume-Policy |
 | `binary_sensor.benni_media_policy_subwoofer_allowed` | Subwoofer erlaubt |
-| `binary_sensor.benni_media_policy_quiet_mode` | Quiet-Mode aktiv |
 | `binary_sensor.benni_media_policy_homepods_should_pause` | HomePods sollen pausieren |
 | `binary_sensor.benni_media_policy_homepods_resume_allowed` | Resume erlaubt |
 | `binary_sensor.benni_media_policy_volume_apply_allowed` | Apply erlaubt (Gate) |
 
+> Der Entity-Präfix folgt dem **Profil** (Device-Name, `has_entity_name`):
+> Route Benni → `…benni_media_policy_*`, Route Eltern → `…eltern_media_policy_*`.
+> (Quiet-Mode lebt in `benni_media_state` — L1, FLEET-31 — und wird hier nur konsumiert.)
+
 ## WebSocket
 
-`benni_media_policy/get_status` → `{ profile, apply_enabled, bindings, data }`.
+`benni_media_policy/get_status` → `{ profile, profile_label, apply_enabled, bindings, data }`.
 
 ## Roadmap
 

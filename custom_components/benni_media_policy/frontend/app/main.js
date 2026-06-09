@@ -108,6 +108,7 @@ class BmpApp extends HTMLElement {
         <h2>Meta</h2>
         <table>
           <tr><td class="k">profile</td><td class="v">${fmt(s.profile)}</td></tr>
+          <tr><td class="k">profile_label</td><td class="v">${fmt(s.profile_label)}</td></tr>
           <tr><td class="k">apply_enabled</td><td class="v">${fmt(s.apply_enabled)}</td></tr>
         </table>
       </div>
