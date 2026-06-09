@@ -1,0 +1,65 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Profil wählen",
+        "description": "Profil-Hub: für welche Route gilt diese Instanz? (benni / eltern). Quellen/Targets werden im nächsten Schritt aus der Profil-Map vorausgefüllt.",
+        "data": {
+          "profile": "Profil"
+        }
+      },
+      "sources": {
+        "title": "Quellen & Audio-Targets (vorläufig)",
+        "description": "Eingänge aus benni_media_state (über Entity-State, kein Import) + eigene Audio-Geräte. Auto-vorausgefüllt aus der Profil-Map, wo vorhanden. Das endgültige Set legt das Lastenheft fest (Step 3).",
+        "data": {
+          "media_context_entity": "Media Context (aus media_state)",
+          "media_device_entity": "Media Device (aus media_state)",
+          "entertainment_active_entity": "Entertainment Active (aus media_state)",
+          "headset_active_entity": "Headset Active (aus media_state)",
+          "homepod_entities": "HomePods (mehrere)",
+          "denon_entity": "Denon / AVR",
+          "subwoofer_entity": "Subwoofer"
+        }
+      },
+      "options": {
+        "title": "Optionen",
+        "description": "Apply ist standardmäßig AUS (Shadow-safe). Erst aktivieren, wenn die Policy-Logik (Step 2/3) verifiziert ist.",
+        "data": {
+          "apply_enabled": "Apply aktiviert (aus = Shadow)"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Es ist bereits eine Media-Policy-Instanz konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Media Policy — Optionen",
+        "menu_options": {
+          "sources": "Quellen & Audio-Targets",
+          "options": "Optionen (Apply)"
+        }
+      },
+      "sources": {
+        "title": "Quellen & Audio-Targets",
+        "data": {
+          "media_context_entity": "Media Context (aus media_state)",
+          "media_device_entity": "Media Device (aus media_state)",
+          "entertainment_active_entity": "Entertainment Active (aus media_state)",
+          "headset_active_entity": "Headset Active (aus media_state)",
+          "homepod_entities": "HomePods (mehrere)",
+          "denon_entity": "Denon / AVR",
+          "subwoofer_entity": "Subwoofer"
+        }
+      },
+      "options": {
+        "title": "Optionen",
+        "data": {
+          "apply_enabled": "Apply aktiviert (aus = Shadow)"
+        }
+      }
+    }
+  }
+}
