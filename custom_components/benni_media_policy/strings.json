@@ -3,29 +3,46 @@
     "step": {
       "user": {
         "title": "Profil wählen",
-        "description": "Profil-Hub (Route): für wen gilt diese Instanz? (Benni / Eltern). Der Device-Name folgt dem Profil → sensor.benni_media_policy_* bzw. sensor.eltern_media_policy_*. Quellen/Targets werden im nächsten Schritt aus der Profil-Map vorausgefüllt.",
-        "data": {
-          "profile": "Profil"
-        }
+        "description": "Profil-Hub (Route): für wen gilt diese Instanz? (Benni / Eltern). Der Device-Name folgt dem Profil → sensor.benni_media_policy_* bzw. sensor.eltern_media_policy_*.",
+        "data": { "profile": "Profil" }
       },
       "entities": {
-        "title": "Quellen & Audio-Targets (vorläufig)",
-        "description": "Eingänge aus benni_media_state (über Entity-State, kein Import) + eigene Audio-Geräte. Vorbefüllt mit der Profil-Map (Auto-Bind); gespeichert werden nur Abweichungen. Leer = Auto-Bind. Existiert die media_state-Entity noch nicht, bleibt der Slot leer und bindet automatisch, sobald sie da ist.",
+        "title": "Quellen & Geräte",
+        "description": "Eingänge aus benni_media_state (Context/Subcontext/Device/Entertainment/Headset/Quiet) + eigene Audio-Geräte und Policy-Inputs. Vorbefüllt aus der Profil-Map; gespeichert werden nur Abweichungen. Roh-/Template-Entitäten (core_devices-Atomics später).",
         "data": {
-          "media_context_entity": "Media Context (aus media_state)",
-          "media_device_entity": "Media Device (aus media_state)",
-          "entertainment_active_entity": "Entertainment Active (aus media_state)",
-          "headset_active_entity": "Headset Active (aus media_state)",
-          "homepod_entities": "HomePods (mehrere)",
-          "denon_entity": "Denon / AVR",
-          "subwoofer_entity": "Subwoofer"
+          "media_context_entity": "media_state · Media Context",
+          "media_subcontext_entity": "media_state · Media Subcontext (Grind-Delta)",
+          "media_device_entity": "media_state · Media Device",
+          "entertainment_active_entity": "media_state · Entertainment Active",
+          "headset_active_entity": "media_state · Headset Active",
+          "quiet_mode_entity": "media_state · Quiet Mode",
+          "homepods_player_entity": "HomePods · Media-Player (MA-Gruppe)",
+          "denon_player_entity": "Denon · Media-Player",
+          "denon_active_entity": "Denon · Plug-Active (denon_audio_path)",
+          "subwoofer_entity": "Subwoofer (nur Apply-Target)",
+          "bio_state_entity": "Bio State (core_state) · Sleep-Mute",
+          "day_state_entity": "Day State · Volume-Offsets",
+          "opening_any_open_entity": "Fenster/Tür offen · Volume-Offset",
+          "manual_playback_entity": "Manuelle Wiedergabe aktiv",
+          "planned_radio_entity": "Geplanter Radio-Sender aktiv",
+          "media_stop_latch_entity": "Media-Stop-Latch (optional)"
         }
       },
       "options": {
-        "title": "Optionen",
-        "description": "Apply ist standardmäßig AUS (Shadow-safe). Erst aktivieren, wenn die Policy-Logik (Phase 3) verifiziert ist.",
+        "title": "Apply-Gate & Volume-Settings",
+        "description": "Apply ist standardmäßig AUS (Shadow). volume_apply_allowed wird pro Entscheidung gesetzt; der Apply-Layer (benni_media_apply) prüft beides. Volumes 0..1, Offsets dürfen negativ sein.",
         "data": {
-          "apply_enabled": "Apply aktiviert (aus = Shadow)"
+          "apply_enabled": "Apply aktiviert (aus = Shadow)",
+          "volume_homepods_base": "HomePods Basis",
+          "volume_denon_base": "Denon Basis",
+          "volume_ducked_target": "Ducked-Target (Quiet)",
+          "volume_homepods_max": "HomePods Max",
+          "volume_denon_max": "Denon Max",
+          "volume_active_min": "Aktiv-Minimum",
+          "volume_night_offset": "Nacht-Offset",
+          "volume_edge_day_offset": "Rand-Tageszeit-Offset",
+          "volume_opening_offset": "Fenster-offen-Offset",
+          "grind_denon_offset": "GRIND · Denon-Kulisse-Offset (R15/R16)"
         }
       }
     },
@@ -37,27 +54,43 @@
     "step": {
       "init": {
         "title": "Media Policy — Optionen",
-        "menu_options": {
-          "entities": "Quellen & Audio-Targets",
-          "options": "Optionen (Apply)"
-        }
+        "menu_options": { "entities": "Quellen & Geräte", "options": "Apply-Gate & Volume" }
       },
       "entities": {
-        "title": "Quellen & Audio-Targets",
+        "title": "Quellen & Geräte",
         "data": {
-          "media_context_entity": "Media Context (aus media_state)",
-          "media_device_entity": "Media Device (aus media_state)",
-          "entertainment_active_entity": "Entertainment Active (aus media_state)",
-          "headset_active_entity": "Headset Active (aus media_state)",
-          "homepod_entities": "HomePods (mehrere)",
-          "denon_entity": "Denon / AVR",
-          "subwoofer_entity": "Subwoofer"
+          "media_context_entity": "media_state · Media Context",
+          "media_subcontext_entity": "media_state · Media Subcontext (Grind-Delta)",
+          "media_device_entity": "media_state · Media Device",
+          "entertainment_active_entity": "media_state · Entertainment Active",
+          "headset_active_entity": "media_state · Headset Active",
+          "quiet_mode_entity": "media_state · Quiet Mode",
+          "homepods_player_entity": "HomePods · Media-Player (MA-Gruppe)",
+          "denon_player_entity": "Denon · Media-Player",
+          "denon_active_entity": "Denon · Plug-Active (denon_audio_path)",
+          "subwoofer_entity": "Subwoofer (nur Apply-Target)",
+          "bio_state_entity": "Bio State (core_state) · Sleep-Mute",
+          "day_state_entity": "Day State · Volume-Offsets",
+          "opening_any_open_entity": "Fenster/Tür offen · Volume-Offset",
+          "manual_playback_entity": "Manuelle Wiedergabe aktiv",
+          "planned_radio_entity": "Geplanter Radio-Sender aktiv",
+          "media_stop_latch_entity": "Media-Stop-Latch (optional)"
         }
       },
       "options": {
-        "title": "Optionen",
+        "title": "Apply-Gate & Volume-Settings",
         "data": {
-          "apply_enabled": "Apply aktiviert (aus = Shadow)"
+          "apply_enabled": "Apply aktiviert (aus = Shadow)",
+          "volume_homepods_base": "HomePods Basis",
+          "volume_denon_base": "Denon Basis",
+          "volume_ducked_target": "Ducked-Target (Quiet)",
+          "volume_homepods_max": "HomePods Max",
+          "volume_denon_max": "Denon Max",
+          "volume_active_min": "Aktiv-Minimum",
+          "volume_night_offset": "Nacht-Offset",
+          "volume_edge_day_offset": "Rand-Tageszeit-Offset",
+          "volume_opening_offset": "Fenster-offen-Offset",
+          "grind_denon_offset": "GRIND · Denon-Kulisse-Offset (R15/R16)"
         }
       }
     }
