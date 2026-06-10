@@ -24,6 +24,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from . import logic
 from .const import (
     BIO_SLEEP_VALUES,
+    CONF_ACTIVITY_STATE,
     CONF_APPLY_ENABLED,
     CONF_BIO_STATE,
     CONF_DAY_STATE,
@@ -32,6 +33,7 @@ from .const import (
     CONF_ENTERTAINMENT_ACTIVE,
     CONF_HEADSET_ACTIVE,
     CONF_HOMEPODS,
+    CONF_HOMEPODS_MUSIC_ENUM,
     CONF_MANUAL_PLAYBACK,
     CONF_MEDIA_CONTEXT,
     CONF_MEDIA_DEVICE,
@@ -42,13 +44,12 @@ from .const import (
     CONF_PROFILE,
     CONF_QUIET_MODE,
     CONF_VOL_ACTIVE_MIN,
+    CONF_VOL_BOOST_OFFSET,
     CONF_VOL_DENON_BASE,
     CONF_VOL_DENON_MAX,
     CONF_VOL_DUCKED_TARGET,
-    CONF_VOL_EDGE_DAY_OFFSET,
     CONF_VOL_HOMEPODS_BASE,
     CONF_VOL_HOMEPODS_MAX,
-    CONF_VOL_NIGHT_OFFSET,
     CONF_VOL_OPENING_OFFSET,
     CONF_GRIND_DENON_OFFSET,
     DEFAULT_APPLY_ENABLED,
@@ -73,6 +74,15 @@ def _opt_bool(s: str | None) -> bool | None:
     if s is None:
         return None
     return s.lower() in _TRUE
+
+
+def _opt_int(s: str | None) -> int | None:
+    if s is None:
+        return None
+    try:
+        return int(float(s))
+    except (TypeError, ValueError):
+        return None
 
 
 class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -135,9 +145,8 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             homepods_max=_f(CONF_VOL_HOMEPODS_MAX),
             denon_max=_f(CONF_VOL_DENON_MAX),
             active_min=_f(CONF_VOL_ACTIVE_MIN),
-            night_offset=_f(CONF_VOL_NIGHT_OFFSET),
-            edge_day_offset=_f(CONF_VOL_EDGE_DAY_OFFSET),
             opening_offset=_f(CONF_VOL_OPENING_OFFSET),
+            boost_offset=_f(CONF_VOL_BOOST_OFFSET),
             grind_denon_offset=_f(CONF_GRIND_DENON_OFFSET),
         )
 
@@ -194,6 +203,8 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             bio_state=bio,
             bio_sleep=bio is not None and bio.lower() in BIO_SLEEP_VALUES,
             day_state=self._state(CONF_DAY_STATE),
+            activity_context=self._state(CONF_ACTIVITY_STATE),
+            homepods_music_enum=_opt_int(self._state(CONF_HOMEPODS_MUSIC_ENUM)),
             opening_any_open=_bool(self._state(CONF_OPENING)),
             manual_playback_active=_bool(self._state(CONF_MANUAL_PLAYBACK)),
             planned_radio_active=_bool(self._state(CONF_PLANNED_RADIO)),
