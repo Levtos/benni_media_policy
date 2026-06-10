@@ -18,8 +18,12 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_change,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from . import logic
 from .const import (
@@ -94,6 +98,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         profile = entry.data.get(CONF_PROFILE, DEFAULT_PROFILE)
         self._profile = profile if profile in PROFILES else DEFAULT_PROFILE
         self._unsub_state = None
+        self._unsub_time = None
         self._orch_state = logic.OrchestratorState()
 
     # ----- profile / binding -----
@@ -159,9 +164,19 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass, watched, self._on_state_change
             )
             self.entry.async_on_unload(self._unsub_state)
+        # Subwoofer-09:00-Floor (FLEET-39): day_state ist solar/saisonal, also
+        # feuert kein State-Change zwingend um 09:00 — eigener Wanduhr-Tick.
+        self._unsub_time = async_track_time_change(
+            self.hass, self._on_time_tick, hour=9, minute=0, second=0
+        )
+        self.entry.async_on_unload(self._unsub_time)
 
     @callback
     def _on_state_change(self, _event: Event) -> None:
+        self.async_set_updated_data(self._compute())
+
+    @callback
+    def _on_time_tick(self, _now) -> None:
         self.async_set_updated_data(self._compute())
 
     # ----- reads -----
@@ -183,6 +198,10 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         val = st.attributes.get(attr)
         return str(val) if val is not None else None
+
+    def _local_minute_of_day(self) -> int:
+        now = dt_util.now()   # HA-lokale Zeit (tz-aware)
+        return now.hour * 60 + now.minute
 
     # ----- evaluation -----
     def _build_inputs(self) -> logic.Inputs:
@@ -206,6 +225,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             activity_context=self._state(CONF_ACTIVITY_STATE),
             homepods_music_enum=_opt_int(self._state(CONF_HOMEPODS_MUSIC_ENUM)),
             opening_any_open=_bool(self._state(CONF_OPENING)),
+            local_minute_of_day=self._local_minute_of_day(),
             manual_playback_active=_bool(self._state(CONF_MANUAL_PLAYBACK)),
             planned_radio_active=_bool(self._state(CONF_PLANNED_RADIO)),
             media_stop_latch=_opt_bool(self._state(CONF_MEDIA_STOP_LATCH)),

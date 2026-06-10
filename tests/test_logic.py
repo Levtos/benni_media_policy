@@ -196,7 +196,8 @@ def test_homepods_missing_blocks_action():
 
 # ------------------------------------------------------------- Subwoofer
 def test_subwoofer_on_with_entertainment_and_denon_path():
-    d, _ = _decide(_inp(context=C.CTX_TV, entertainment_active=True, denon_active=True))
+    d, _ = _decide(_inp(context=C.CTX_TV, entertainment_active=True, denon_active=True,
+                        day_state="afternoon"))
     assert d.subwoofer_allowed is True
 
 
@@ -228,10 +229,54 @@ def test_subwoofer_off_window_no_denon_path():
 
 def test_denon_audio_path_via_device():
     d, _ = _decide(_inp(context=C.CTX_TV, entertainment_active=True, device=C.DEV_DENON,
-                        opening_any_open=True))
+                        opening_any_open=True, day_state="afternoon"))
     # device==denon → denon_path True → window allein blockt nicht mehr.
     assert d.denon_audio_path is True
     assert d.subwoofer_allowed is True
+
+
+# ----------------------------------------- R-§6 Subwoofer-Dayphase-Fenster (FLEET-39)
+def _sub_inp(**kw):
+    base = dict(context=C.CTX_TV, entertainment_active=True, denon_active=True)
+    base.update(kw)
+    return _inp(**base)
+
+
+def test_subwoofer_off_outside_dayphase_window():
+    # late_night ∉ erlaubte Phasen → aus, trotz Entertainment + Denon-Path.
+    d, _ = _decide(_sub_inp(day_state="late_night"))
+    assert d.subwoofer_allowed is False
+    assert d.subwoofer_block_reason == "dayphase_window"
+
+
+def test_subwoofer_off_early_morning():
+    d, _ = _decide(_sub_inp(day_state="early_morning"))
+    assert d.subwoofer_allowed is False
+    assert d.subwoofer_block_reason == "dayphase_window"
+
+
+def test_subwoofer_off_late_morning_before_0900():
+    # Erlaubte Phase, aber Wanduhr < 09:00 (Sommer-Fall) → Floor blockt.
+    d, _ = _decide(_sub_inp(day_state="late_morning", local_minute_of_day=8 * 60 + 30))
+    assert d.subwoofer_allowed is False
+    assert d.subwoofer_block_reason == "before_0900"
+
+
+def test_subwoofer_on_late_morning_at_0900():
+    d, _ = _decide(_sub_inp(day_state="late_morning", local_minute_of_day=9 * 60))
+    assert d.subwoofer_allowed is True
+
+
+def test_subwoofer_unknown_time_allows_in_phase():
+    # Lokalzeit unbekannt → Phase reicht (kein Floor-Block).
+    d, _ = _decide(_sub_inp(day_state="afternoon", local_minute_of_day=None))
+    assert d.subwoofer_allowed is True
+
+
+def test_subwoofer_all_allowed_phases_on():
+    for ph in ("late_morning", "forenoon", "afternoon", "early_evening", "late_evening"):
+        d, _ = _decide(_sub_inp(day_state=ph, local_minute_of_day=12 * 60))
+        assert d.subwoofer_allowed is True, ph
 
 
 # ------------------------------------------------- R18 Track-Boost / R19 Mute
