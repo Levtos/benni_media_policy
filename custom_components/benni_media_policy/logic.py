@@ -4,6 +4,13 @@ Phase 3 (FLEET-34): Lift + Adaption von orchestrator.py (Audio-Owner,
 pause/resume/radio) + volume_orchestrator.py (Volume-Policy, Ducking, Offsets) +
 evaluate_subwoofer/_denon_audio_path aus bennis_toolbox/benni_media_context.
 
+Volume-Modell v3.1 (FLEET-38): `decide_volume` ersetzt die flachen night/edge-
+Offsets durch per-Dayphase-Baselines (Lastenheft §6) und die R17-Formel
+(baseline + szenario/fenster/kontext/manual-Offset + track_boost). R18 Track-
+Boost (Musik-Enum 1, geblockt in work_*/Quiet) und R19 Mute (Enum 2 → hart 0).
+Nudges (R21/R22, ±0.10 + Boost-Reset) sind als Folge-Karte ausgegliedert
+(manual_off-Hook liegt schon vor).
+
 Adaption ggü. dem Toolbox-Original (verbindlich per Board):
 - **Owner aus media_state-Context**, nicht Roh-Re-Derive: der Context kodiert
   Geräte-Priorität + B2-Gaming-Gate bereits (media_state). owner = f(context,
@@ -35,23 +42,25 @@ from .const import (
     AUDIO_OWNER_NONE,
     AUDIO_OWNER_PRIVATE,
     AUDIO_OWNER_TV_DENON,
+    BOOST_BLOCK_ACTIVITIES,
     CTX_GAMING,
     CTX_PRIVATE,
     CTX_STREAMING,
     CTX_TV,
-    DAY_EDGE_VALUES,
-    DAY_NIGHT_VALUES,
     DEFAULT_GRIND_DENON_OFFSET,
     DEFAULT_VOL_ACTIVE_MIN,
+    DEFAULT_VOL_BOOST_OFFSET,
     DEFAULT_VOL_DENON_BASE,
     DEFAULT_VOL_DENON_MAX,
     DEFAULT_VOL_DUCKED_TARGET,
-    DEFAULT_VOL_EDGE_DAY_OFFSET,
     DEFAULT_VOL_HOMEPODS_BASE,
     DEFAULT_VOL_HOMEPODS_MAX,
-    DEFAULT_VOL_NIGHT_OFFSET,
     DEFAULT_VOL_OPENING_OFFSET,
+    DENON_BASELINES,
     DEV_DENON,
+    HOMEPODS_BASELINES,
+    MUSIC_ENUM_BOOST,
+    MUSIC_ENUM_MUTE,
     RESUME_MODE_MANUAL,
     RESUME_MODE_RADIO,
     SUB_GAME_GRIND,
@@ -86,6 +95,8 @@ class Inputs:
     bio_state: Optional[str] = None
     bio_sleep: bool = False
     day_state: Optional[str] = None
+    activity_context: Optional[str] = None    # core_state activity_state (R18-Block)
+    homepods_music_enum: Optional[int] = None  # title_classifier musikkatalog (R18/R19)
     opening_any_open: bool = False
     manual_playback_active: bool = False
     planned_radio_active: bool = False
@@ -107,16 +118,17 @@ class OrchestratorState:
 
 @dataclass(frozen=True)
 class VolumeSettings:
+    # homepods_base/denon_base = Fallback-Baseline bei unbekannter Tagesphase;
+    # die regulären Baselines kommen aus HOMEPODS_BASELINES/DENON_BASELINES.
     homepods_base: float = DEFAULT_VOL_HOMEPODS_BASE
     denon_base: float = DEFAULT_VOL_DENON_BASE
     ducked_target: float = DEFAULT_VOL_DUCKED_TARGET
     homepods_max: float = DEFAULT_VOL_HOMEPODS_MAX
     denon_max: float = DEFAULT_VOL_DENON_MAX
     active_min: float = DEFAULT_VOL_ACTIVE_MIN
-    night_offset: float = DEFAULT_VOL_NIGHT_OFFSET
-    edge_day_offset: float = DEFAULT_VOL_EDGE_DAY_OFFSET
-    opening_offset: float = DEFAULT_VOL_OPENING_OFFSET
-    grind_denon_offset: float = DEFAULT_GRIND_DENON_OFFSET
+    opening_offset: float = DEFAULT_VOL_OPENING_OFFSET   # R17 fenster_offset
+    boost_offset: float = DEFAULT_VOL_BOOST_OFFSET       # R18 Track-Boost
+    grind_denon_offset: float = DEFAULT_GRIND_DENON_OFFSET  # R17 szenario_offset (Grind)
 
 
 @dataclass
@@ -140,6 +152,8 @@ class PolicyDecision:
     subwoofer_block_reason: Optional[str] = None
     denon_audio_path: bool = False
     is_grind: bool = False
+    track_boost_applied: bool = False
+    music_muted: bool = False
     active_reasons: list = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -164,6 +178,8 @@ class PolicyDecision:
             "subwoofer_block_reason": self.subwoofer_block_reason,
             "denon_audio_path": self.denon_audio_path,
             "is_grind": self.is_grind,
+            "track_boost_applied": self.track_boost_applied,
+            "music_muted": self.music_muted,
             "active_reasons": list(self.active_reasons),
         }
 
@@ -292,77 +308,115 @@ def decide_action(
 # --------------------------------------------------------------------------- #
 # Volume (volume_orchestrator-Lift + GRIND-Delta)
 # --------------------------------------------------------------------------- #
-def _day_offset(day_state: Optional[str], s: VolumeSettings) -> float:
-    if day_state in DAY_NIGHT_VALUES:
-        return s.night_offset
-    if day_state in DAY_EDGE_VALUES:
-        return s.edge_day_offset
-    return 0.0
-
-
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
-def _final_target(base: float, *, day_off: float, open_off: float,
-                  active_min: float, hard_max: float) -> float:
-    target = base + day_off + open_off
+def _baseline(day_state: Optional[str], table: dict[str, float], fallback: float) -> float:
+    """Per-Dayphase-Baseline (Lastenheft §6). Unbekannte Phase → Fallback-Base."""
+    if day_state and day_state in table:
+        return table[day_state]
+    return fallback
+
+
+def _assemble(
+    base: float, *, szenario_off: float, fenster_off: float, kontext_off: float,
+    manual_off: float, boost: float, active_min: float, hard_max: float,
+) -> float:
+    """R17-Formel: Σ der Komponenten, active_min-Boden, hard-Clamp, rund auf 3."""
+    target = base + szenario_off + fenster_off + kontext_off + manual_off + boost
     target = max(target, active_min)
     return round(_clamp(target, 0.0, hard_max), 3)
 
 
+def boost_active(inp: Inputs) -> bool:
+    """R18: HomePods-Track-Boost (Musik-Enum 1). Geblockt in work_home/work_away
+    und bei Quiet (Quiet wird strukturell schon im Ducked-Zweig abgefangen)."""
+    if inp.homepods_music_enum != MUSIC_ENUM_BOOST:
+        return False
+    if inp.quiet_mode:
+        return False
+    if inp.activity_context in BOOST_BLOCK_ACTIVITIES:
+        return False
+    return True
+
+
+def music_muted(inp: Inputs) -> bool:
+    """R19: HomePods-Musik-Enum 2 → Mute (hart auf 0, übersteuert die Formel)."""
+    return inp.homepods_music_enum == MUSIC_ENUM_MUTE
+
+
 def decide_volume(
     inp: Inputs, owner: str, grind: bool, s: VolumeSettings
-) -> tuple[str, Optional[float], Optional[float], bool, str]:
-    """Return (policy, homepods_target, denon_target, apply_allowed, reason)."""
+) -> tuple[str, Optional[float], Optional[float], bool, str, bool, bool]:
+    """R17-Volume-Modell v3.1. Return
+    (policy, homepods_target, denon_target, apply_allowed, reason,
+     boost_applied, muted)."""
     # 1. Blocked: keine adressierbaren Speaker.
     if not inp.homepods_configured and not inp.denon_configured:
-        return VOL_POLICY_BLOCKED, None, None, False, "no_speakers_configured"
+        return VOL_POLICY_BLOCKED, None, None, False, "no_speakers_configured", False, False
 
-    # 2. Muted: bio sleep.
+    # 2. Muted: bio sleep (R25 — HomePods aus).
     if inp.bio_sleep:
-        return VOL_POLICY_MUTED, None, None, False, "bio_sleep_muted"
+        return VOL_POLICY_MUTED, None, None, False, "bio_sleep_muted", False, False
 
-    # ---- Base-Routing ----
+    # ---- Routing: welche Seite spielt? GRIND → beide (HomePods dominant). ----
     if grind:
-        # GRIND-Delta: HomePods Normal-Niveau, Denon Kulisse (negativer Offset).
-        base_hp = s.homepods_base
-        base_dn = max(0.0, s.denon_base + s.grind_denon_offset)
+        hp_plays, dn_plays = True, True
     elif owner == AUDIO_OWNER_HOMEPODS:
-        base_hp, base_dn = s.homepods_base, 0.0
+        hp_plays, dn_plays = True, False
     elif owner in (AUDIO_OWNER_TV_DENON, AUDIO_OWNER_GAMING, AUDIO_OWNER_PRIVATE):
-        base_hp, base_dn = 0.0, s.denon_base
+        hp_plays, dn_plays = False, True
     else:  # NONE
-        base_hp, base_dn = 0.0, 0.0
+        hp_plays, dn_plays = False, False
 
-    day_off = _day_offset(inp.day_state, s)
-    open_off = s.opening_offset if inp.opening_any_open else 0.0
+    fenster = s.opening_offset if inp.opening_any_open else 0.0
 
-    # 3. Ducked: quiet mode (hart auf ducked_target für aktive Seite[n]).
+    # 3. Ducked: quiet mode (R20 — hart auf ducked_target für aktive Seite[n]).
     if inp.quiet_mode:
         hp = dn = None
         if inp.homepods_configured:
-            hp = round(_clamp(s.ducked_target, 0.0, s.homepods_max), 3) if base_hp > 0 else 0.0
+            hp = round(_clamp(s.ducked_target, 0.0, s.homepods_max), 3) if hp_plays else 0.0
         if inp.denon_configured:
-            dn = round(_clamp(s.ducked_target, 0.0, s.denon_max), 3) if base_dn > 0 else 0.0
-        return VOL_POLICY_DUCKED, hp, dn, True, "quiet_mode_ducked"
+            dn = round(_clamp(s.ducked_target, 0.0, s.denon_max), 3) if dn_plays else 0.0
+        return VOL_POLICY_DUCKED, hp, dn, True, "quiet_mode_ducked", False, False
 
     # 4. Idle: kein Owner und kein Grind.
     if owner == AUDIO_OWNER_NONE and not grind:
         hp = 0.0 if inp.homepods_configured else None
         dn = 0.0 if inp.denon_configured else None
-        return VOL_POLICY_IDLE, hp, dn, True, "idle_no_owner"
+        return VOL_POLICY_IDLE, hp, dn, True, "idle_no_owner", False, False
 
-    # 5. Media: normales Routing mit Offsets/Clamps.
+    # 5. Media: R17-Formel mit Dayphase-Baselines + Boost/Mute.
+    boost_flag = hp_plays and boost_active(inp)
+    muted_flag = hp_plays and music_muted(inp)
+
     hp = dn = None
     if inp.homepods_configured:
-        hp = _final_target(base_hp, day_off=day_off, open_off=open_off,
-                           active_min=s.active_min, hard_max=s.homepods_max) if base_hp > 0 else 0.0
+        if not hp_plays:
+            hp = 0.0
+        elif muted_flag:
+            hp = 0.0   # R19: Mute übersteuert die berechnete Ziel-Lautstärke.
+        else:
+            hp = _assemble(
+                _baseline(inp.day_state, HOMEPODS_BASELINES, s.homepods_base),
+                szenario_off=0.0, fenster_off=fenster, kontext_off=0.0, manual_off=0.0,
+                boost=s.boost_offset if boost_flag else 0.0,
+                active_min=s.active_min, hard_max=s.homepods_max,
+            )
     if inp.denon_configured:
-        dn = _final_target(base_dn, day_off=day_off, open_off=open_off,
-                           active_min=s.active_min, hard_max=s.denon_max) if base_dn > 0 else 0.0
+        if not dn_plays:
+            dn = 0.0
+        else:
+            # GRIND: Denon als Hintergrund-Kulisse via szenario_offset (R16/§6).
+            dn = _assemble(
+                _baseline(inp.day_state, DENON_BASELINES, s.denon_base),
+                szenario_off=(s.grind_denon_offset if grind else 0.0),
+                fenster_off=fenster, kontext_off=0.0, manual_off=0.0, boost=0.0,
+                active_min=s.active_min, hard_max=s.denon_max,
+            )
     reason = "grind_homepods_denon_kulisse" if grind else f"owner_{owner}"
-    return VOL_POLICY_MEDIA, hp, dn, True, reason
+    return VOL_POLICY_MEDIA, hp, dn, True, reason, boost_flag, muted_flag
 
 
 # --------------------------------------------------------------------------- #
@@ -424,13 +478,21 @@ def decide(
     d.action_reason = action_reason
     reasons.append(f"action:{action_reason}")
 
-    policy, hp, dn, apply_allowed, vol_reason = decide_volume(inp, owner, grind, settings)
+    policy, hp, dn, apply_allowed, vol_reason, boost_applied, muted = decide_volume(
+        inp, owner, grind, settings
+    )
     d.volume_policy = policy
     d.volume_target_homepods = hp
     d.volume_target_denon = dn
     d.volume_apply_allowed = apply_allowed
     d.volume_reason = vol_reason
+    d.track_boost_applied = boost_applied
+    d.music_muted = muted
     reasons.append(f"volume:{vol_reason}")
+    if boost_applied:
+        reasons.append("boost:track_boost_r18")
+    if muted:
+        reasons.append("mute:music_enum_r19")
 
     d.denon_audio_path = denon_audio_path(inp)
     allowed, block = evaluate_subwoofer(inp, grind, d.denon_audio_path)
