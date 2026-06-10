@@ -1,14 +1,15 @@
 """Media-Policy-Coordinator (Single-Instance, event-driven).
 
-DataUpdateCoordinator ohne Polling (`update_interval=None`): rechnet nur bei
-State-Changes der gebundenen Quell-Entities (oder manuellem Refresh) neu.
+DataUpdateCoordinator ohne Polling: rechnet bei State-Changes der gebundenen
+Quell-Entities neu. Profil-Hub + Auto-Bind (options ▶ data ▶ Profil-Map).
 
-Profil-Hub (benni/eltern) + Auto-Bind: Override (Config) ▶ Profil-Map ▶ leer.
-Apply ist gated an `apply_enabled` (Default False = Shadow-safe), wie light_policy.
+Phase 3 (FLEET-34): baut die Inputs aus media_state (Entity-State) + eigenen
+Roh-Inputs, hält den persistenten OrchestratorState über die Ticks (RAM, wie
+Toolbox) und hydratisiert VolumeSettings aus den Options.
 
-Step-1-Scaffold: `_compute()` ruft `logic.decide()` (Stub) und liefert die
-Default-data. Eingänge aus benni_media_state werden über Entity-State gelesen
-(kein Python-Import); der Entscheidungs-Body kommt in Step 2.
+Apply-Gate: `apply_enabled` = globaler Shadow-Kill-Switch (Option, hier);
+`volume_apply_allowed` = pro Entscheidung (aus der Logik). Getrennt — der
+Apply-Layer (benni_media_apply) prüft beide.
 """
 from __future__ import annotations
 
@@ -22,36 +23,56 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from . import logic
 from .const import (
+    BIO_SLEEP_VALUES,
     CONF_APPLY_ENABLED,
+    CONF_BIO_STATE,
+    CONF_DAY_STATE,
+    CONF_DENON,
+    CONF_DENON_ACTIVE,
     CONF_ENTERTAINMENT_ACTIVE,
     CONF_HEADSET_ACTIVE,
+    CONF_HOMEPODS,
+    CONF_MANUAL_PLAYBACK,
     CONF_MEDIA_CONTEXT,
     CONF_MEDIA_DEVICE,
+    CONF_MEDIA_STOP_LATCH,
+    CONF_MEDIA_SUBCONTEXT,
+    CONF_OPENING,
+    CONF_PLANNED_RADIO,
     CONF_PROFILE,
+    CONF_QUIET_MODE,
+    CONF_VOL_ACTIVE_MIN,
+    CONF_VOL_DENON_BASE,
+    CONF_VOL_DENON_MAX,
+    CONF_VOL_DUCKED_TARGET,
+    CONF_VOL_EDGE_DAY_OFFSET,
+    CONF_VOL_HOMEPODS_BASE,
+    CONF_VOL_HOMEPODS_MAX,
+    CONF_VOL_NIGHT_OFFSET,
+    CONF_VOL_OPENING_OFFSET,
+    CONF_GRIND_DENON_OFFSET,
     DEFAULT_APPLY_ENABLED,
     DEFAULT_PROFILE,
     DOMAIN,
     PROFILE_PREFILL,
     PROFILES,
+    VOL_SETTING_DEFAULTS,
     WATCH_KEYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-
-def _state(hass: HomeAssistant, eid: str | None) -> str | None:
-    if not eid:
-        return None
-    st = hass.states.get(eid)
-    if st is None or st.state in ("unknown", "unavailable"):
-        return None
-    return st.state
+_TRUE = frozenset({"on", "true", "1", "home", "active", "playing", "open"})
 
 
-def _bool_state(s: str | None) -> bool | None:
+def _bool(s: str | None) -> bool:
+    return s is not None and s.lower() in _TRUE
+
+
+def _opt_bool(s: str | None) -> bool | None:
     if s is None:
         return None
-    return s.lower() in ("on", "true", "1", "home", "active", "playing")
+    return s.lower() in _TRUE
 
 
 class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -63,6 +84,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         profile = entry.data.get(CONF_PROFILE, DEFAULT_PROFILE)
         self._profile = profile if profile in PROFILES else DEFAULT_PROFILE
         self._unsub_state = None
+        self._orch_state = logic.OrchestratorState()
 
     # ----- profile / binding -----
     @property
@@ -78,12 +100,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return bool(self._opts.get(CONF_APPLY_ENABLED, DEFAULT_APPLY_ENABLED))
 
     def _entity_id(self, key: str) -> Any:
-        """Auto-Bind (core_state-Blaupause): options ▶ data ▶ PROFILE_PREFILL[profile].
-
-        Override (options/data) gewinnt, sonst die Profil-Map aus dem Code; so
-        propagieren Map-Updates aus dem Repo auf alle Anlagen, die den Slot nicht
-        überschrieben haben.
-        """
+        """Auto-Bind (core_state-Blaupause): options ▶ data ▶ PROFILE_PREFILL[profile]."""
         return (
             self.entry.options.get(key)
             or self.entry.data.get(key)
@@ -101,8 +118,28 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return list(dict.fromkeys(ids))
 
     def bindings(self) -> dict[str, Any]:
-        """Aktuelle Auflösung aller WATCH_KEYS — für Panel/Diagnose."""
         return {key: self._entity_id(key) for key in WATCH_KEYS}
+
+    def settings(self) -> logic.VolumeSettings:
+        """VolumeSettings aus den Options (Default je Key bei fehlend/ungültig)."""
+        def _f(key: str) -> float:
+            raw = self._opts.get(key, VOL_SETTING_DEFAULTS[key])
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return VOL_SETTING_DEFAULTS[key]
+        return logic.VolumeSettings(
+            homepods_base=_f(CONF_VOL_HOMEPODS_BASE),
+            denon_base=_f(CONF_VOL_DENON_BASE),
+            ducked_target=_f(CONF_VOL_DUCKED_TARGET),
+            homepods_max=_f(CONF_VOL_HOMEPODS_MAX),
+            denon_max=_f(CONF_VOL_DENON_MAX),
+            active_min=_f(CONF_VOL_ACTIVE_MIN),
+            night_offset=_f(CONF_VOL_NIGHT_OFFSET),
+            edge_day_offset=_f(CONF_VOL_EDGE_DAY_OFFSET),
+            opening_offset=_f(CONF_VOL_OPENING_OFFSET),
+            grind_denon_offset=_f(CONF_GRIND_DENON_OFFSET),
+        )
 
     # ----- lifecycle -----
     @callback
@@ -118,21 +155,60 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _on_state_change(self, _event: Event) -> None:
         self.async_set_updated_data(self._compute())
 
+    # ----- reads -----
+    def _state(self, key: str) -> str | None:
+        eid = self._entity_id(key)
+        if not eid:
+            return None
+        st = self.hass.states.get(eid)
+        if st is None or st.state in ("unknown", "unavailable"):
+            return None
+        return st.state
+
+    def _attr(self, key: str, attr: str) -> str | None:
+        eid = self._entity_id(key)
+        if not eid:
+            return None
+        st = self.hass.states.get(eid)
+        if st is None:
+            return None
+        val = st.attributes.get(attr)
+        return str(val) if val is not None else None
+
     # ----- evaluation -----
     def _build_inputs(self) -> logic.Inputs:
+        bio = self._state(CONF_BIO_STATE)
         return logic.Inputs(
-            media_context=_state(self.hass, self._entity_id(CONF_MEDIA_CONTEXT)),
-            media_device=_state(self.hass, self._entity_id(CONF_MEDIA_DEVICE)),
-            entertainment_active=_bool_state(
-                _state(self.hass, self._entity_id(CONF_ENTERTAINMENT_ACTIVE))
-            ),
-            headset_active=_bool_state(
-                _state(self.hass, self._entity_id(CONF_HEADSET_ACTIVE))
-            ),
+            context=self._state(CONF_MEDIA_CONTEXT),
+            subcontext=self._state(CONF_MEDIA_SUBCONTEXT),
+            device=self._state(CONF_MEDIA_DEVICE),
+            entertainment_active=_bool(self._state(CONF_ENTERTAINMENT_ACTIVE)),
+            headset_active=_bool(self._state(CONF_HEADSET_ACTIVE)),
+            quiet_mode=_bool(self._state(CONF_QUIET_MODE)),
+            homepods_state=self._state(CONF_HOMEPODS),
+            homepods_configured=bool(self._entity_id(CONF_HOMEPODS)),
+            denon_configured=bool(self._entity_id(CONF_DENON)),
+            denon_active=_bool(self._state(CONF_DENON_ACTIVE))
+            or self._state(CONF_DENON) in ("on", "playing"),
+            denon_source=self._attr(CONF_DENON, "source"),
+            bio_state=bio,
+            bio_sleep=bio is not None and bio.lower() in BIO_SLEEP_VALUES,
+            day_state=self._state(CONF_DAY_STATE),
+            opening_any_open=_bool(self._state(CONF_OPENING)),
+            manual_playback_active=_bool(self._state(CONF_MANUAL_PLAYBACK)),
+            planned_radio_active=_bool(self._state(CONF_PLANNED_RADIO)),
+            media_stop_latch=_opt_bool(self._state(CONF_MEDIA_STOP_LATCH)),
         )
 
     def _compute(self) -> dict[str, Any]:
-        return logic.decide(self._build_inputs(), apply_enabled=self.apply_enabled).as_dict()
+        decision, self._orch_state = logic.decide(
+            self._build_inputs(), self._orch_state, self.settings()
+        )
+        self._last_debug = decision.debug()
+        return decision.as_dict()
+
+    def debug(self) -> dict[str, Any]:
+        return getattr(self, "_last_debug", {})
 
     async def _async_update_data(self) -> dict[str, Any]:
         return self._compute()

@@ -29,6 +29,7 @@ def _status(coord) -> dict[str, Any]:
         "apply_enabled": coord.apply_enabled,
         "bindings": coord.bindings(),
         "data": dict(coord.data or {}),
+        "debug": coord.debug(),
     }
 
 

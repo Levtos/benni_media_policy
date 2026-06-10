@@ -1,13 +1,11 @@
 """Config- und Options-Flow für benni_media_policy.
 
-Profil-Mechanik 1:1 aus benni_core_state (gelockte Blaupause, FLEET-33):
-- Schritt `user`: Profil-SelectSelector (benni/eltern).
-- Schritt `entities`: Quell-/Target-Slots, vorbefüllt mit der Profil-Map
-  (Auto-Bind sichtbar); gespeichert werden nur Abweichungen (`_entity_overrides`).
-  `_prefill_defaults` filtert auf Entities, die in dieser HA existieren.
-- Schritt `options`: Apply gated (Default Shadow) — landet in den Options.
-- Single-Instance: nur ein Config-Entry (`_async_current_entries()`-Gate).
-- Auto-Bind `options ▶ data ▶ PROFILE_PREFILL[profile]` lebt im Coordinator.
+Profil-Mechanik 1:1 aus benni_core_state (gelockte Blaupause):
+- `user`: Profil-SelectSelector (benni/eltern).
+- `entities`: Quell-/Target-Slots (media_state-Eingänge + eigene Geräte/Inputs),
+  vorbefüllt mit der Profil-Map; gespeichert werden nur Abweichungen.
+- `options`: Apply-Gate (Shadow) + Volume-Settings.
+- Single-Instance; Auto-Bind lebt im Coordinator.
 
 HA erkennt den Config-Flow nur unter `config_flow.py` (Pflicht-Modulname).
 """
@@ -24,48 +22,52 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_APPLY_ENABLED,
     CONF_DENON,
-    CONF_ENTERTAINMENT_ACTIVE,
-    CONF_HEADSET_ACTIVE,
+    CONF_GRIND_DENON_OFFSET,
     CONF_HOMEPODS,
-    CONF_MEDIA_CONTEXT,
-    CONF_MEDIA_DEVICE,
     CONF_PROFILE,
-    CONF_SUBWOOFER,
+    CONF_VOL_ACTIVE_MIN,
+    CONF_VOL_DENON_BASE,
+    CONF_VOL_DENON_MAX,
+    CONF_VOL_DUCKED_TARGET,
+    CONF_VOL_EDGE_DAY_OFFSET,
+    CONF_VOL_HOMEPODS_BASE,
+    CONF_VOL_HOMEPODS_MAX,
+    CONF_VOL_NIGHT_OFFSET,
+    CONF_VOL_OPENING_OFFSET,
     DEFAULT_APPLY_ENABLED,
     DEFAULT_PROFILE,
     DOMAIN,
+    ENTITY_SLOT_KEYS,
     NAME,
     PROFILE_LABELS,
     PROFILE_PREFILL,
     PROFILES,
-    WATCH_KEYS,
+    VOL_SETTING_DEFAULTS,
 )
 
-# --- Selektoren (ungefiltert) ---
+# --- Selektoren ---
 _ENTITY = selector.EntitySelector(selector.EntitySelectorConfig())
-_PLAYERS = selector.EntitySelector(
-    selector.EntitySelectorConfig(domain="media_player", multiple=True)
-)
 _PLAYER = selector.EntitySelector(selector.EntitySelectorConfig(domain="media_player"))
 _BOOL = selector.BooleanSelector()
+_PLAYER_KEYS = (CONF_HOMEPODS, CONF_DENON)
 
 SELECTORS: dict[str, Any] = {
-    CONF_MEDIA_CONTEXT: _ENTITY,
-    CONF_MEDIA_DEVICE: _ENTITY,
-    CONF_ENTERTAINMENT_ACTIVE: _ENTITY,
-    CONF_HEADSET_ACTIVE: _ENTITY,
-    CONF_HOMEPODS: _PLAYERS,
-    CONF_DENON: _PLAYER,
-    CONF_SUBWOOFER: _ENTITY,
+    key: (_PLAYER if key in _PLAYER_KEYS else _ENTITY) for key in ENTITY_SLOT_KEYS
 }
 
-# Entity-Slots (Override-fähig): media_state-Eingänge + eigene Audio-Targets.
-_ENTITY_SLOT_KEYS: tuple[str, ...] = WATCH_KEYS + (CONF_SUBWOOFER,)
+# Volume-Settings (signierte Floats; Offsets dürfen negativ sein).
+_VOL_KEYS: tuple[str, ...] = (
+    CONF_VOL_HOMEPODS_BASE, CONF_VOL_DENON_BASE, CONF_VOL_DUCKED_TARGET,
+    CONF_VOL_HOMEPODS_MAX, CONF_VOL_DENON_MAX, CONF_VOL_ACTIVE_MIN,
+    CONF_VOL_NIGHT_OFFSET, CONF_VOL_EDGE_DAY_OFFSET, CONF_VOL_OPENING_OFFSET,
+    CONF_GRIND_DENON_OFFSET,
+)
+_VOL_COERCE = vol.All(vol.Coerce(float), vol.Range(min=-1.0, max=1.0))
 
 
 def _entities_schema(defaults: dict[str, Any]) -> vol.Schema:
     fields: dict[Any, Any] = {}
-    for key in _ENTITY_SLOT_KEYS:
+    for key in ENTITY_SLOT_KEYS:
         d = defaults.get(key)
         marker = vol.Optional(key, default=d) if d else vol.Optional(key)
         fields[marker] = SELECTORS[key]
@@ -73,19 +75,24 @@ def _entities_schema(defaults: dict[str, Any]) -> vol.Schema:
 
 
 def _options_schema(defaults: dict[str, Any]) -> vol.Schema:
-    return vol.Schema({
+    fields: dict[Any, Any] = {
         vol.Optional(
             CONF_APPLY_ENABLED,
             default=bool(defaults.get(CONF_APPLY_ENABLED, DEFAULT_APPLY_ENABLED)),
         ): _BOOL,
-    })
+    }
+    for key in _VOL_KEYS:
+        fields[vol.Optional(
+            key, default=float(defaults.get(key, VOL_SETTING_DEFAULTS[key]))
+        )] = _VOL_COERCE
+    return vol.Schema(fields)
 
 
 def _entity_overrides(profile: str, user_input: dict[str, Any]) -> dict[str, Any]:
     """Nur echte Abweichungen vom Profil-Map als Override speichern."""
     code = PROFILE_PREFILL.get(profile, {})
     out: dict[str, Any] = {}
-    for key in _ENTITY_SLOT_KEYS:
+    for key in ENTITY_SLOT_KEYS:
         v = user_input.get(key)
         if v and v != code.get(key):
             out[key] = v
@@ -93,10 +100,9 @@ def _entity_overrides(profile: str, user_input: dict[str, Any]) -> dict[str, Any
 
 
 def _override_or_map(profile: str, data: dict[str, Any]) -> dict[str, Any]:
-    """Anzeige-Defaults: gespeicherter Override sonst Profil-Map-Default."""
     code = PROFILE_PREFILL.get(profile, {})
     out: dict[str, Any] = {}
-    for key in _ENTITY_SLOT_KEYS:
+    for key in ENTITY_SLOT_KEYS:
         v = data.get(key) or code.get(key)
         if v:
             out[key] = v
@@ -125,12 +131,6 @@ class MediaPolicyConfigFlow(ConfigFlow, domain=DOMAIN):
         self._entities: dict[str, Any] = {}
 
     def _prefill_defaults(self) -> dict[str, Any]:
-        """Profil-Prefill, gefiltert auf Entities, die in dieser HA existieren.
-
-        Profil "eltern" hat (vorerst) keine Defaults → alle Slots leer. Der
-        Existenz-Filter regelt die Deploy-Reihenfolge: erst media_state, dann
-        bindet media_policy automatisch.
-        """
         prefill = PROFILE_PREFILL.get(self._profile, {})
         return {
             key: eid
@@ -139,7 +139,6 @@ class MediaPolicyConfigFlow(ConfigFlow, domain=DOMAIN):
         }
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        # Single-Instance-Gate (eine Route pro HA; saubere Entity-IDs).
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
         if user_input is None:
@@ -184,7 +183,7 @@ class MediaPolicyOptionsFlow(OptionsFlow):
             overrides = _entity_overrides(profile, user_input)
             new_data = {
                 k: v for k, v in self.config_entry.data.items()
-                if k not in _ENTITY_SLOT_KEYS
+                if k not in ENTITY_SLOT_KEYS
             }
             new_data.update(overrides)
             new_data[CONF_PROFILE] = profile
