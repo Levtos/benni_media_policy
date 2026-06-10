@@ -21,8 +21,10 @@
           "denon_active_entity": "Denon · Plug-Active (denon_audio_path)",
           "subwoofer_entity": "Subwoofer (nur Apply-Target)",
           "bio_state_entity": "Bio State (core_state) · Sleep-Mute",
-          "day_state_entity": "Day State · Volume-Offsets",
+          "day_state_entity": "Day State · Dayphase-Baselines",
+          "activity_state_entity": "Activity State (core_state) · Boost-Block (work_*)",
           "opening_any_open_entity": "Fenster/Tür offen · Volume-Offset",
+          "homepods_music_enum_entity": "HomePods Musik-Enum (title_classifier) · Boost/Mute",
           "manual_playback_entity": "Manuelle Wiedergabe aktiv",
           "planned_radio_entity": "Geplanter Radio-Sender aktiv",
           "media_stop_latch_entity": "Media-Stop-Latch (optional)"
@@ -39,9 +41,8 @@
           "volume_homepods_max": "HomePods Max",
           "volume_denon_max": "Denon Max",
           "volume_active_min": "Aktiv-Minimum",
-          "volume_night_offset": "Nacht-Offset",
-          "volume_edge_day_offset": "Rand-Tageszeit-Offset",
-          "volume_opening_offset": "Fenster-offen-Offset",
+          "volume_opening_offset": "Fenster-offen-Offset (R17 fenster_offset)",
+          "volume_boost_offset": "Track-Boost-Offset (R18, +0.15)",
           "grind_denon_offset": "GRIND · Denon-Kulisse-Offset (R15/R16)"
         }
       }
@@ -70,8 +71,10 @@
           "denon_active_entity": "Denon · Plug-Active (denon_audio_path)",
           "subwoofer_entity": "Subwoofer (nur Apply-Target)",
           "bio_state_entity": "Bio State (core_state) · Sleep-Mute",
-          "day_state_entity": "Day State · Volume-Offsets",
+          "day_state_entity": "Day State · Dayphase-Baselines",
+          "activity_state_entity": "Activity State (core_state) · Boost-Block (work_*)",
           "opening_any_open_entity": "Fenster/Tür offen · Volume-Offset",
+          "homepods_music_enum_entity": "HomePods Musik-Enum (title_classifier) · Boost/Mute",
           "manual_playback_entity": "Manuelle Wiedergabe aktiv",
           "planned_radio_entity": "Geplanter Radio-Sender aktiv",
           "media_stop_latch_entity": "Media-Stop-Latch (optional)"
@@ -87,9 +90,8 @@
           "volume_homepods_max": "HomePods Max",
           "volume_denon_max": "Denon Max",
           "volume_active_min": "Aktiv-Minimum",
-          "volume_night_offset": "Nacht-Offset",
-          "volume_edge_day_offset": "Rand-Tageszeit-Offset",
-          "volume_opening_offset": "Fenster-offen-Offset",
+          "volume_opening_offset": "Fenster-offen-Offset (R17 fenster_offset)",
+          "volume_boost_offset": "Track-Boost-Offset (R18, +0.15)",
           "grind_denon_offset": "GRIND · Denon-Kulisse-Offset (R15/R16)"
         }
       }
