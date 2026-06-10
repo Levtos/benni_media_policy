@@ -63,6 +63,8 @@ from .const import (
     MUSIC_ENUM_MUTE,
     RESUME_MODE_MANUAL,
     RESUME_MODE_RADIO,
+    SUB_ALLOWED_PHASES,
+    SUB_EARLIEST_MINUTE,
     SUB_GAME_GRIND,
     VOL_POLICY_BLOCKED,
     VOL_POLICY_DUCKED,
@@ -98,6 +100,7 @@ class Inputs:
     activity_context: Optional[str] = None    # core_state activity_state (R18-Block)
     homepods_music_enum: Optional[int] = None  # title_classifier musikkatalog (R18/R19)
     opening_any_open: bool = False
+    local_minute_of_day: Optional[int] = None  # Wanduhr-Floor Subwoofer (09:00)
     manual_playback_active: bool = False
     planned_radio_active: bool = False
     media_stop_latch: Optional[bool] = None   # None = nicht konfiguriert
@@ -433,6 +436,17 @@ def denon_audio_path(inp: Inputs) -> bool:
     return bool(src and src not in ("", "off", "standby"))
 
 
+def subwoofer_dayphase_ok(inp: Inputs) -> bool:
+    """Dayphase-Fenster v3.1 (§6): erlaubte Phase UND frühestens 09:00 lokal.
+    Der 09:00-Floor greift real nur in late_morning (solar/saisonal → kann im
+    Sommer vor 09:00 beginnen); bei unbekannter Lokalzeit reicht die Phase."""
+    if inp.day_state not in SUB_ALLOWED_PHASES:
+        return False
+    if inp.local_minute_of_day is not None and inp.local_minute_of_day < SUB_EARLIEST_MINUTE:
+        return False
+    return True
+
+
 def evaluate_subwoofer(inp: Inputs, grind: bool, denon_path: bool) -> tuple[bool, Optional[str]]:
     # R16: bei gaming_grind IMMER aus (übersteuert die Sub-Policy).
     if grind:
@@ -445,6 +459,11 @@ def evaluate_subwoofer(inp: Inputs, grind: bool, denon_path: bool) -> tuple[bool
         return False, "headset_active"
     if inp.opening_any_open and not denon_path:
         return False, "window_open_no_denon_path"
+    # Dayphase-Fenster v3.1 (§6): nur late_morning..late_evening, frühestens 09:00.
+    if not subwoofer_dayphase_ok(inp):
+        if inp.day_state not in SUB_ALLOWED_PHASES:
+            return False, "dayphase_window"
+        return False, "before_0900"
     return True, None
 
 
