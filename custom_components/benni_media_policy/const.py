@@ -86,9 +86,48 @@ VOL_POLICY_DUCKED: Final = "ducked"
 VOL_POLICY_MUTED: Final = "muted"
 VOL_POLICY_BLOCKED: Final = "blocked"
 
-# Day-State-Werte mit Volume-Offset (sonst 0).
-DAY_NIGHT_VALUES: Final = ("night", "late_night", "early_night")
-DAY_EDGE_VALUES: Final = ("early_morning", "late_evening")
+# --------------------------------------------------------------------------- #
+# Volume-Modell v3.1 (FLEET-38) — Dayphase-Baselines + Boost/Mute.
+# Die per-Phase-Baseline (Lastenheft §6) ERSETZT die alten flachen night/edge-
+# Offsets: die Tagesphase steckt jetzt in der Baseline selbst. Werte slug-gleich
+# mit benni_core_day_state. Unbekannte/fehlende Phase → flacher Fallback-Base
+# (VolumeSettings.homepods_base / .denon_base).
+# --------------------------------------------------------------------------- #
+DAY_PHASES: Final[tuple[str, ...]] = (
+    "early_morning", "late_morning", "forenoon", "afternoon",
+    "early_evening", "late_evening", "early_night", "late_night",
+)
+HOMEPODS_BASELINES: Final[dict[str, float]] = {
+    "early_morning": 0.25, "late_morning": 0.30, "forenoon": 0.40, "afternoon": 0.45,
+    "early_evening": 0.40, "late_evening": 0.35, "early_night": 0.30, "late_night": 0.25,
+}
+DENON_BASELINES: Final[dict[str, float]] = {
+    "early_morning": 0.20, "late_morning": 0.25, "forenoon": 0.30, "afternoon": 0.30,
+    "early_evening": 0.30, "late_evening": 0.30, "early_night": 0.25, "late_night": 0.20,
+}
+
+# Musik-Title-Classifier-Enum (HomePods) — R18 Boost / R19 Mute.
+MUSIC_ENUM_NORMAL: Final[int] = 0
+MUSIC_ENUM_BOOST: Final[int] = 1
+MUSIC_ENUM_MUTE: Final[int] = 2
+
+# R18: Track-Boost geblockt in diesen Activity-Kontexten (+ bei Quiet, strukturell).
+ACT_WORK_HOME: Final = "work_home"
+ACT_WORK_AWAY: Final = "work_away"
+BOOST_BLOCK_ACTIVITIES: Final = (ACT_WORK_HOME, ACT_WORK_AWAY)
+
+# --------------------------------------------------------------------------- #
+# Subwoofer-Policy v3.1 (FLEET-39) — Dayphase-Fenster (Lastenheft §6).
+# Erlaubt: late_morning (frühestens 09:00) … einschließlich late_evening.
+# Nicht erlaubt: early_morning, early_night, late_night (+ late_morning vor 09:00).
+# Sonderfall gaming_grind → immer aus (R16, schon im Lift). day_state ist
+# solar/saisonal → die 09:00-Grenze ist ein zusätzlicher Wanduhr-Floor, kein
+# bloßer Phasenrand (late_morning kann im Sommer vor 09:00 beginnen).
+# --------------------------------------------------------------------------- #
+SUB_ALLOWED_PHASES: Final[tuple[str, ...]] = (
+    "late_morning", "forenoon", "afternoon", "early_evening", "late_evening",
+)
+SUB_EARLIEST_MINUTE: Final[int] = 9 * 60   # 09:00 lokal, Minuten seit Mitternacht
 
 # --------------------------------------------------------------------------- #
 # Config-Keys — Eingänge aus benni_media_state (via Entity-State).
@@ -107,7 +146,9 @@ CONF_DENON_ACTIVE: Final[str] = "denon_active_entity"  # Plug-Active (denon_audi
 CONF_SUBWOOFER: Final[str] = "subwoofer_entity"        # nur Target (Apply-Layer)
 CONF_BIO_STATE: Final[str] = "bio_state_entity"
 CONF_DAY_STATE: Final[str] = "day_state_entity"
+CONF_ACTIVITY_STATE: Final[str] = "activity_state_entity"   # R18 Boost-Block (work_*)
 CONF_OPENING: Final[str] = "opening_any_open_entity"   # Fenster/Tür offen → Offset
+CONF_HOMEPODS_MUSIC_ENUM: Final[str] = "homepods_music_enum_entity"  # R18/R19 Boost/Mute
 CONF_MANUAL_PLAYBACK: Final[str] = "manual_playback_entity"
 CONF_PLANNED_RADIO: Final[str] = "planned_radio_entity"
 CONF_MEDIA_STOP_LATCH: Final[str] = "media_stop_latch_entity"
@@ -117,7 +158,8 @@ WATCH_KEYS: Final[tuple[str, ...]] = (
     CONF_MEDIA_CONTEXT, CONF_MEDIA_SUBCONTEXT, CONF_MEDIA_DEVICE,
     CONF_ENTERTAINMENT_ACTIVE, CONF_HEADSET_ACTIVE, CONF_QUIET_MODE,
     CONF_HOMEPODS, CONF_DENON, CONF_DENON_ACTIVE,
-    CONF_BIO_STATE, CONF_DAY_STATE, CONF_OPENING,
+    CONF_BIO_STATE, CONF_DAY_STATE, CONF_ACTIVITY_STATE, CONF_OPENING,
+    CONF_HOMEPODS_MUSIC_ENUM,
     CONF_MANUAL_PLAYBACK, CONF_PLANNED_RADIO, CONF_MEDIA_STOP_LATCH,
 )
 
@@ -145,7 +187,9 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_DENON_ACTIVE: "binary_sensor.living_denon_plug_power_active_atomic",
         CONF_BIO_STATE: "sensor.benni_core_state_bio_state",
         CONF_DAY_STATE: "sensor.benni_core_day_state",
+        CONF_ACTIVITY_STATE: "sensor.benni_core_state_activity_state",
         CONF_OPENING: "binary_sensor.opening_any_open_combined",
+        CONF_HOMEPODS_MUSIC_ENUM: "sensor.title_classifier_musikkatalog_enum",
         CONF_MANUAL_PLAYBACK: "binary_sensor.media_manual_playback_active",
         CONF_PLANNED_RADIO: "binary_sensor.media_radio_playing_planned_station",
     },
@@ -158,16 +202,17 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
 CONF_APPLY_ENABLED: Final[str] = "apply_enabled"
 DEFAULT_APPLY_ENABLED: Final[bool] = False   # Shadow-safe out of the box.
 
+# homepods_base / denon_base = Fallback-Baseline bei unbekannter Tagesphase
+# (die regulären Werte kommen aus HOMEPODS_BASELINES / DENON_BASELINES).
 CONF_VOL_HOMEPODS_BASE: Final[str] = "volume_homepods_base"
 CONF_VOL_DENON_BASE: Final[str] = "volume_denon_base"
 CONF_VOL_DUCKED_TARGET: Final[str] = "volume_ducked_target"
 CONF_VOL_HOMEPODS_MAX: Final[str] = "volume_homepods_max"
 CONF_VOL_DENON_MAX: Final[str] = "volume_denon_max"
 CONF_VOL_ACTIVE_MIN: Final[str] = "volume_active_min"
-CONF_VOL_NIGHT_OFFSET: Final[str] = "volume_night_offset"
-CONF_VOL_EDGE_DAY_OFFSET: Final[str] = "volume_edge_day_offset"
-CONF_VOL_OPENING_OFFSET: Final[str] = "volume_opening_offset"
-CONF_GRIND_DENON_OFFSET: Final[str] = "grind_denon_offset"
+CONF_VOL_OPENING_OFFSET: Final[str] = "volume_opening_offset"  # R17 fenster_offset
+CONF_VOL_BOOST_OFFSET: Final[str] = "volume_boost_offset"      # R18 Track-Boost
+CONF_GRIND_DENON_OFFSET: Final[str] = "grind_denon_offset"     # R17 szenario_offset (Grind)
 
 DEFAULT_VOL_HOMEPODS_BASE: Final = 0.35
 DEFAULT_VOL_DENON_BASE: Final = 0.40
@@ -175,9 +220,8 @@ DEFAULT_VOL_DUCKED_TARGET: Final = 0.15
 DEFAULT_VOL_HOMEPODS_MAX: Final = 0.65
 DEFAULT_VOL_DENON_MAX: Final = 0.70
 DEFAULT_VOL_ACTIVE_MIN: Final = 0.05
-DEFAULT_VOL_NIGHT_OFFSET: Final = -0.10
-DEFAULT_VOL_EDGE_DAY_OFFSET: Final = -0.05
 DEFAULT_VOL_OPENING_OFFSET: Final = -0.05
+DEFAULT_VOL_BOOST_OFFSET: Final = 0.15
 # GRIND-Delta (R15/R16/§6): Denon als Hintergrund-Kulisse, −0.10…−0.15.
 DEFAULT_GRIND_DENON_OFFSET: Final = -0.12
 
@@ -188,9 +232,8 @@ VOL_SETTING_DEFAULTS: Final[dict[str, float]] = {
     CONF_VOL_HOMEPODS_MAX: DEFAULT_VOL_HOMEPODS_MAX,
     CONF_VOL_DENON_MAX: DEFAULT_VOL_DENON_MAX,
     CONF_VOL_ACTIVE_MIN: DEFAULT_VOL_ACTIVE_MIN,
-    CONF_VOL_NIGHT_OFFSET: DEFAULT_VOL_NIGHT_OFFSET,
-    CONF_VOL_EDGE_DAY_OFFSET: DEFAULT_VOL_EDGE_DAY_OFFSET,
     CONF_VOL_OPENING_OFFSET: DEFAULT_VOL_OPENING_OFFSET,
+    CONF_VOL_BOOST_OFFSET: DEFAULT_VOL_BOOST_OFFSET,
     CONF_GRIND_DENON_OFFSET: DEFAULT_GRIND_DENON_OFFSET,
 }
 

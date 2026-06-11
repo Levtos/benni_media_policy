@@ -18,12 +18,17 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_change,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from . import logic
 from .const import (
     BIO_SLEEP_VALUES,
+    CONF_ACTIVITY_STATE,
     CONF_APPLY_ENABLED,
     CONF_BIO_STATE,
     CONF_DAY_STATE,
@@ -32,6 +37,7 @@ from .const import (
     CONF_ENTERTAINMENT_ACTIVE,
     CONF_HEADSET_ACTIVE,
     CONF_HOMEPODS,
+    CONF_HOMEPODS_MUSIC_ENUM,
     CONF_MANUAL_PLAYBACK,
     CONF_MEDIA_CONTEXT,
     CONF_MEDIA_DEVICE,
@@ -42,13 +48,12 @@ from .const import (
     CONF_PROFILE,
     CONF_QUIET_MODE,
     CONF_VOL_ACTIVE_MIN,
+    CONF_VOL_BOOST_OFFSET,
     CONF_VOL_DENON_BASE,
     CONF_VOL_DENON_MAX,
     CONF_VOL_DUCKED_TARGET,
-    CONF_VOL_EDGE_DAY_OFFSET,
     CONF_VOL_HOMEPODS_BASE,
     CONF_VOL_HOMEPODS_MAX,
-    CONF_VOL_NIGHT_OFFSET,
     CONF_VOL_OPENING_OFFSET,
     CONF_GRIND_DENON_OFFSET,
     DEFAULT_APPLY_ENABLED,
@@ -75,6 +80,15 @@ def _opt_bool(s: str | None) -> bool | None:
     return s.lower() in _TRUE
 
 
+def _opt_int(s: str | None) -> int | None:
+    if s is None:
+        return None
+    try:
+        return int(float(s))
+    except (TypeError, ValueError):
+        return None
+
+
 class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Eine Instanz pro Config-Entry (Single-Instance-Modell)."""
 
@@ -84,6 +98,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         profile = entry.data.get(CONF_PROFILE, DEFAULT_PROFILE)
         self._profile = profile if profile in PROFILES else DEFAULT_PROFILE
         self._unsub_state = None
+        self._unsub_time = None
         self._orch_state = logic.OrchestratorState()
 
     # ----- profile / binding -----
@@ -135,9 +150,8 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             homepods_max=_f(CONF_VOL_HOMEPODS_MAX),
             denon_max=_f(CONF_VOL_DENON_MAX),
             active_min=_f(CONF_VOL_ACTIVE_MIN),
-            night_offset=_f(CONF_VOL_NIGHT_OFFSET),
-            edge_day_offset=_f(CONF_VOL_EDGE_DAY_OFFSET),
             opening_offset=_f(CONF_VOL_OPENING_OFFSET),
+            boost_offset=_f(CONF_VOL_BOOST_OFFSET),
             grind_denon_offset=_f(CONF_GRIND_DENON_OFFSET),
         )
 
@@ -150,9 +164,19 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass, watched, self._on_state_change
             )
             self.entry.async_on_unload(self._unsub_state)
+        # Subwoofer-09:00-Floor (FLEET-39): day_state ist solar/saisonal, also
+        # feuert kein State-Change zwingend um 09:00 — eigener Wanduhr-Tick.
+        self._unsub_time = async_track_time_change(
+            self.hass, self._on_time_tick, hour=9, minute=0, second=0
+        )
+        self.entry.async_on_unload(self._unsub_time)
 
     @callback
     def _on_state_change(self, _event: Event) -> None:
+        self.async_set_updated_data(self._compute())
+
+    @callback
+    def _on_time_tick(self, _now) -> None:
         self.async_set_updated_data(self._compute())
 
     # ----- reads -----
@@ -175,6 +199,10 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         val = st.attributes.get(attr)
         return str(val) if val is not None else None
 
+    def _local_minute_of_day(self) -> int:
+        now = dt_util.now()   # HA-lokale Zeit (tz-aware)
+        return now.hour * 60 + now.minute
+
     # ----- evaluation -----
     def _build_inputs(self) -> logic.Inputs:
         bio = self._state(CONF_BIO_STATE)
@@ -194,7 +222,10 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             bio_state=bio,
             bio_sleep=bio is not None and bio.lower() in BIO_SLEEP_VALUES,
             day_state=self._state(CONF_DAY_STATE),
+            activity_context=self._state(CONF_ACTIVITY_STATE),
+            homepods_music_enum=_opt_int(self._state(CONF_HOMEPODS_MUSIC_ENUM)),
             opening_any_open=_bool(self._state(CONF_OPENING)),
+            local_minute_of_day=self._local_minute_of_day(),
             manual_playback_active=_bool(self._state(CONF_MANUAL_PLAYBACK)),
             planned_radio_active=_bool(self._state(CONF_PLANNED_RADIO)),
             media_stop_latch=_opt_bool(self._state(CONF_MEDIA_STOP_LATCH)),
