@@ -12,7 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DATA_COORDINATOR, DOMAIN
+from .const import DATA_COORDINATOR, DOMAIN, LEGACY_ENTITY_MAP
 from .coordinator import MediaPolicyCoordinator
 from .view import async_remove_view, async_setup_view
 from .websocket_api import async_setup_websocket_api
@@ -39,6 +39,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data[_WS_FLAG] = True
 
     entry.async_on_unload(entry.add_update_listener(_async_reload))
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate retired entity IDs from earlier prefills."""
+    changed = False
+    data = dict(entry.data)
+    options = dict(entry.options)
+    for target in (data, options):
+        for key, value in list(target.items()):
+            if isinstance(value, str) and value in LEGACY_ENTITY_MAP:
+                target[key] = LEGACY_ENTITY_MAP[value]
+                changed = True
+
+    if changed or entry.version < 2:
+        hass.config_entries.async_update_entry(
+            entry,
+            data=data,
+            options=options,
+            version=2,
+        )
+        _LOGGER.info("Migrated benni_media_policy entity bindings")
     return True
 
 

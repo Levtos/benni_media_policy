@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 — FLEET-54 Core Day-State Prefill
+
+- `day_state_entity` im Benni-Prefill zeigt jetzt auf
+  `sensor.benni_combined_context_day_state` statt auf den nicht existierenden
+  `sensor.benni_core_day_state`.
+- Bestehende ConfigEntries migrieren den alten Slot automatisch.
+
 ## 0.1.0 — scaffold
 
 ### Realign (Step 1.5 — gelockte Profil-Mechanik, FLEET-33 / FLEET-31)

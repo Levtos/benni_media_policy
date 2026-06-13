@@ -186,7 +186,7 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_DENON: "media_player.living_denon",
         CONF_DENON_ACTIVE: "binary_sensor.living_denon_plug_power_active_atomic",
         CONF_BIO_STATE: "sensor.benni_core_state_bio_state",
-        CONF_DAY_STATE: "sensor.benni_core_day_state",
+        CONF_DAY_STATE: "sensor.benni_combined_context_day_state",
         CONF_ACTIVITY_STATE: "sensor.benni_core_state_activity_state",
         CONF_OPENING: "binary_sensor.opening_any_open_combined",
         CONF_HOMEPODS_MUSIC_ENUM: "sensor.title_classifier_musikkatalog_enum",
@@ -194,6 +194,10 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_PLANNED_RADIO: "binary_sensor.media_radio_playing_planned_station",
     },
     PROFILE_ELTERN: {},
+}
+
+LEGACY_ENTITY_MAP: Final[dict[str, str]] = {
+    "sensor.benni_core_day_state": "sensor.benni_combined_context_day_state",
 }
 
 # --------------------------------------------------------------------------- #
