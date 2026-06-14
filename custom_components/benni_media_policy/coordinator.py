@@ -241,6 +241,19 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def debug(self) -> dict[str, Any]:
         return getattr(self, "_last_debug", {})
 
+    def status(self) -> dict[str, Any]:
+        """Reicher Snapshot fürs Cockpit (benni_media-Umbrella bevorzugt status()):
+        Decision + Reasons (mit Severity) + Volume-Formel-Breakdown. Read-only."""
+        dbg = dict(getattr(self, "_last_debug", {}) or {})
+        if not dbg:
+            return {}
+        inp = self._build_inputs()
+        dbg["volume_formula"] = logic.volume_breakdown(
+            inp, dbg.get("audio_owner", "none"), bool(dbg.get("is_grind", False)), self.settings()
+        )
+        dbg["reasons"] = logic.structured_reasons(dbg)
+        return dbg
+
     async def _async_update_data(self) -> dict[str, Any]:
         return self._compute()
 

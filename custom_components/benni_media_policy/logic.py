@@ -423,6 +423,79 @@ def decide_volume(
 
 
 # --------------------------------------------------------------------------- #
+# Observability: Volume-Formel-Breakdown + strukturierte Reasons (für das Cockpit;
+# ändern KEINE Entscheidung). volume_breakdown spiegelt den MEDIA-Zweig von
+# decide_volume über dieselben Helfer (_baseline/_assemble/boost_active) → kein Drift.
+# --------------------------------------------------------------------------- #
+def volume_breakdown(
+    inp: Inputs, owner: str, grind: bool, s: VolumeSettings
+) -> dict[str, Any]:
+    """R17-Komponenten je Gerät (base · scenario · window · activity · nudge ·
+    boost → result). Nur im MEDIA-Zweig voll aussagekräftig; sonst result=0/—."""
+    if grind:
+        hp_plays, dn_plays = True, True
+    elif owner == AUDIO_OWNER_HOMEPODS:
+        hp_plays, dn_plays = True, False
+    elif owner in (AUDIO_OWNER_TV_DENON, AUDIO_OWNER_GAMING, AUDIO_OWNER_PRIVATE):
+        hp_plays, dn_plays = False, True
+    else:
+        hp_plays, dn_plays = False, False
+    fenster = s.opening_offset if inp.opening_any_open else 0.0
+    boost_flag = hp_plays and boost_active(inp)
+
+    def comp(base: float, szen: float, plays: bool, hard_max: float, boost: float) -> dict[str, Any]:
+        win = fenster if plays else 0.0
+        result = _assemble(
+            base, szenario_off=szen, fenster_off=win, kontext_off=0.0,
+            manual_off=0.0, boost=boost, active_min=s.active_min, hard_max=hard_max,
+        ) if plays else 0.0
+        return {
+            "base": round(base, 3), "scenario_offset": round(szen, 3),
+            "window_offset": round(win, 3), "activity_offset": 0.0,
+            "manual_nudge": 0.0, "track_boost": round(boost, 3),
+            "result": result, "plays": plays,
+        }
+
+    return {
+        "homepods": comp(
+            _baseline(inp.day_state, HOMEPODS_BASELINES, s.homepods_base),
+            0.0, hp_plays, s.homepods_max, s.boost_offset if boost_flag else 0.0,
+        ),
+        "denon": comp(
+            _baseline(inp.day_state, DENON_BASELINES, s.denon_base),
+            (s.grind_denon_offset if grind else 0.0), dn_plays, s.denon_max, 0.0,
+        ),
+    }
+
+
+_REASON_BLOCKED_KW = (
+    "block", "mute", "no_", "stop", "sleep", "window", "dayphase",
+    "before_0900", "competing", "missing",
+)
+_REASON_WARN_KW = ("ducked", "quiet", "grind", "headset", "private")
+
+
+def reason_severity(text: str) -> str:
+    t = (text or "").lower()
+    if any(k in t for k in _REASON_BLOCKED_KW):
+        return "blocked"
+    if any(k in t for k in _REASON_WARN_KW):
+        return "warn"
+    return "ok"
+
+
+def structured_reasons(dbg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Why-Stack: aktive Reasons → [{id, severity, text}] für das Cockpit."""
+    out: list[dict[str, Any]] = []
+    for r in dbg.get("active_reasons", []) or []:
+        out.append({"id": str(r), "severity": reason_severity(str(r)), "text": str(r)})
+    sub = dbg.get("subwoofer_block_reason")
+    if sub:
+        out.append({"id": f"subwoofer_{sub}", "severity": "blocked", "text": f"subwoofer_blocked:{sub}"})
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Subwoofer (evaluate_subwoofer-Lift + R16 GRIND-Override)
 # --------------------------------------------------------------------------- #
 def denon_audio_path(inp: Inputs) -> bool:
