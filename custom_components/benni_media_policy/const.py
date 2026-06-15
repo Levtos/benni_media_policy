@@ -184,11 +184,11 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         # eigene Geräte/Inputs:
         CONF_HOMEPODS: "media_player.living_homepods_ma_group",
         CONF_DENON: "media_player.living_denon",
-        CONF_DENON_ACTIVE: "binary_sensor.living_denon_plug_power_active_atomic",
+        CONF_DENON_ACTIVE: "sensor.benni_device_living_avr",
         CONF_BIO_STATE: "sensor.benni_core_state_bio_state",
         CONF_DAY_STATE: "sensor.benni_combined_context_day_state",
         CONF_ACTIVITY_STATE: "sensor.benni_core_state_activity_state",
-        CONF_OPENING: "binary_sensor.opening_any_open_combined",
+        CONF_OPENING: "sensor.benni_combined_opening_any_open",
         CONF_HOMEPODS_MUSIC_ENUM: "sensor.title_classifier_musikkatalog_enum",
         CONF_MANUAL_PLAYBACK: "binary_sensor.media_manual_playback_active",
         CONF_PLANNED_RADIO: "binary_sensor.media_radio_playing_planned_station",
@@ -198,6 +198,9 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
 
 LEGACY_ENTITY_MAP: Final[dict[str, str]] = {
     "sensor.benni_core_day_state": "sensor.benni_combined_context_day_state",
+    # FLEET-64-retirete Atomics/Combineds → core_devices (Diagnostics-Fund).
+    "binary_sensor.living_denon_plug_power_active_atomic": "sensor.benni_device_living_avr",
+    "binary_sensor.opening_any_open_combined": "sensor.benni_combined_opening_any_open",
 }
 
 # --------------------------------------------------------------------------- #
