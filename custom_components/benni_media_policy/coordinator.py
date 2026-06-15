@@ -106,6 +106,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # R21/R22 Laufzeit-Steuerung (RAM, fail-safe: Reset bei HA-Neustart).
         self._manual_nudge: float = 0.0
         self._boost_suppressed: bool = False
+        self._boost_suppress_track: str | None = None  # Track, für den R22 gilt
 
     # ----- profile / binding -----
     @property
@@ -209,6 +210,12 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now = dt_util.now()   # HA-lokale Zeit (tz-aware)
         return now.hour * 60 + now.minute
 
+    def _homepods_track(self) -> str | None:
+        """Track-Identität des HomePods-Players (R22 Track-Change-Erkennung)."""
+        return self._attr(CONF_HOMEPODS, "media_content_id") or self._attr(
+            CONF_HOMEPODS, "media_title"
+        )
+
     # ----- evaluation -----
     def _build_inputs(self) -> logic.Inputs:
         bio = self._state(CONF_BIO_STATE)
@@ -240,12 +247,17 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     def _compute(self) -> dict[str, Any]:
-        # R22: Boost-Reset gilt nur für den aktuell geboosteten Track — sobald das
-        # Musik-Enum den Boost-Zustand verlässt, hebt sich die Sperre auf.
-        if self._boost_suppressed and (
-            _opt_int(self._state(CONF_HOMEPODS_MUSIC_ENUM)) != MUSIC_ENUM_BOOST
-        ):
-            self._boost_suppressed = False
+        # R22: Boost-Reset gilt nur für den aktuell geboosteten Track. Sperre hebt
+        # sich auf bei (a) Trackwechsel (media_content_id/title ändert sich) oder
+        # (b) Verlassen des Boost-Enums — fail-safe, falls der Player keinen Titel
+        # liefert.
+        if self._boost_suppressed:
+            track = self._homepods_track()
+            enum_left = _opt_int(self._state(CONF_HOMEPODS_MUSIC_ENUM)) != MUSIC_ENUM_BOOST
+            track_changed = track != self._boost_suppress_track
+            if enum_left or track_changed:
+                self._boost_suppressed = False
+                self._boost_suppress_track = None
         decision, self._orch_state = logic.decide(
             self._build_inputs(), self._orch_state, self.settings()
         )
@@ -302,6 +314,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def async_reset_boost(self) -> None:
-        """R22: Track-Boost für den aktuellen Track unterdrücken."""
+        """R22: Track-Boost für den aktuell laufenden Track unterdrücken."""
         self._boost_suppressed = True
+        self._boost_suppress_track = self._homepods_track()
         self.async_set_updated_data(self._compute())
