@@ -252,6 +252,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             inp, dbg.get("audio_owner", "none"), bool(dbg.get("is_grind", False)), self.settings()
         )
         dbg["reasons"] = logic.structured_reasons(dbg)
+        dbg["bindings"] = self.bindings()
         return dbg
 
     async def _async_update_data(self) -> dict[str, Any]:
