@@ -59,6 +59,9 @@ from .const import (
     DEFAULT_APPLY_ENABLED,
     DEFAULT_PROFILE,
     DOMAIN,
+    MUSIC_ENUM_BOOST,
+    NUDGE_MAX,
+    NUDGE_MIN,
     PROFILE_PREFILL,
     PROFILES,
     VOL_SETTING_DEFAULTS,
@@ -100,6 +103,9 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub_state = None
         self._unsub_time = None
         self._orch_state = logic.OrchestratorState()
+        # R21/R22 Laufzeit-Steuerung (RAM, fail-safe: Reset bei HA-Neustart).
+        self._manual_nudge: float = 0.0
+        self._boost_suppressed: bool = False
 
     # ----- profile / binding -----
     @property
@@ -229,9 +235,17 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             manual_playback_active=_bool(self._state(CONF_MANUAL_PLAYBACK)),
             planned_radio_active=_bool(self._state(CONF_PLANNED_RADIO)),
             media_stop_latch=_opt_bool(self._state(CONF_MEDIA_STOP_LATCH)),
+            manual_nudge=self._manual_nudge,
+            boost_suppressed=self._boost_suppressed,
         )
 
     def _compute(self) -> dict[str, Any]:
+        # R22: Boost-Reset gilt nur für den aktuell geboosteten Track — sobald das
+        # Musik-Enum den Boost-Zustand verlässt, hebt sich die Sperre auf.
+        if self._boost_suppressed and (
+            _opt_int(self._state(CONF_HOMEPODS_MUSIC_ENUM)) != MUSIC_ENUM_BOOST
+        ):
+            self._boost_suppressed = False
         decision, self._orch_state = logic.decide(
             self._build_inputs(), self._orch_state, self.settings()
         )
@@ -253,6 +267,13 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         dbg["reasons"] = logic.structured_reasons(dbg)
         dbg["bindings"] = self.bindings()
+        dbg["nudge"] = {
+            "manual_nudge": round(self._manual_nudge, 3),
+            "boost_suppressed": self._boost_suppressed,
+            "min": NUDGE_MIN,
+            "max": NUDGE_MAX,
+            "boost_active": bool(dbg.get("track_boost_applied", False)),
+        }
         return dbg
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -263,3 +284,24 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Apply zur Laufzeit an/aus. Schreibt in die Options → Reload-Listener."""
         new_options = {**self.entry.options, CONF_APPLY_ENABLED: bool(value)}
         self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+
+    @callback
+    def async_nudge_volume(self, delta: float) -> float:
+        """R21: manuellen Nudge-Offset um delta verschieben (geklammert)."""
+        self._manual_nudge = round(
+            min(NUDGE_MAX, max(NUDGE_MIN, self._manual_nudge + float(delta))), 3
+        )
+        self.async_set_updated_data(self._compute())
+        return self._manual_nudge
+
+    @callback
+    def async_reset_nudge(self) -> None:
+        """R21: Nudge-Offset auf 0 zurücksetzen."""
+        self._manual_nudge = 0.0
+        self.async_set_updated_data(self._compute())
+
+    @callback
+    def async_reset_boost(self) -> None:
+        """R22: Track-Boost für den aktuellen Track unterdrücken."""
+        self._boost_suppressed = True
+        self.async_set_updated_data(self._compute())

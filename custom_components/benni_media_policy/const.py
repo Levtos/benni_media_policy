@@ -284,3 +284,12 @@ FRONTEND_ENTRY: Final[str] = f"{FRONTEND_DIR_URL}/main.js"
 PANEL_ELEMENT: Final[str] = "bmp-app"
 
 WS_GET_STATUS: Final[str] = f"{DOMAIN}/get_status"
+# R21/R22 Nudge-Steuerung (Laufzeit, Cockpit-Quick-Actions).
+WS_NUDGE_VOLUME: Final[str] = f"{DOMAIN}/nudge_volume"
+WS_RESET_NUDGE: Final[str] = f"{DOMAIN}/reset_nudge"
+WS_RESET_BOOST: Final[str] = f"{DOMAIN}/reset_boost"
+
+# R21: ±-Schritt + Klammer für den manuellen Nudge-Offset.
+NUDGE_STEP: Final[float] = 0.05
+NUDGE_MIN: Final[float] = -0.30
+NUDGE_MAX: Final[float] = 0.30

@@ -318,3 +318,41 @@ def test_music_mute_does_not_touch_denon_in_grind():
                         day_state="afternoon", homepods_music_enum=C.MUSIC_ENUM_MUTE))
     assert d.volume_target_homepods == 0.0
     assert d.volume_target_denon == 0.18  # 0.30 - 0.12
+
+
+# ----------------------------------------------------- R21/R22 Nudge + Boost-Reset
+def test_manual_nudge_raises_homepods():
+    base = _decide(_inp(homepods_state="playing", day_state="afternoon"))[0]
+    d, _ = _decide(_inp(homepods_state="playing", day_state="afternoon",
+                        manual_nudge=0.10))
+    assert d.volume_target_homepods == round(base.volume_target_homepods + 0.10, 3)
+
+
+def test_manual_nudge_negative_lowers_homepods():
+    d, _ = _decide(_inp(homepods_state="playing", day_state="afternoon",
+                        manual_nudge=-0.30))
+    assert d.volume_target_homepods == 0.15  # 0.45 - 0.30
+
+
+def test_manual_nudge_raises_denon():
+    base = _decide(_inp(context=C.CTX_TV, day_state="afternoon"))[0]
+    d, _ = _decide(_inp(context=C.CTX_TV, day_state="afternoon", manual_nudge=0.10))
+    assert d.volume_target_denon == round(base.volume_target_denon + 0.10, 3)
+
+
+def test_boost_suppressed_disables_track_boost():
+    # R22: gleicher Boost-Track, aber Boost-Reset aktiv → kein Offset.
+    d, _ = _decide(_inp(homepods_state="playing", day_state="afternoon",
+                        homepods_music_enum=C.MUSIC_ENUM_BOOST,
+                        boost_suppressed=True))
+    assert d.track_boost_applied is False
+    assert d.volume_target_homepods == 0.45  # ohne Boost
+
+
+def test_volume_breakdown_reports_nudge():
+    bd = L.volume_breakdown(
+        _inp(homepods_state="playing", day_state="afternoon", manual_nudge=0.10),
+        C.AUDIO_OWNER_HOMEPODS, False, L.VolumeSettings(),
+    )
+    assert bd["homepods"]["manual_nudge"] == 0.10
+    assert bd["denon"]["manual_nudge"] == 0.0  # spielt nicht → kein Nudge

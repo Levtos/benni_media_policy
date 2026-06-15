@@ -104,6 +104,8 @@ class Inputs:
     manual_playback_active: bool = False
     planned_radio_active: bool = False
     media_stop_latch: Optional[bool] = None   # None = nicht konfiguriert
+    manual_nudge: float = 0.0                  # R21 ±0.10-Nudge (Laufzeit, Cockpit)
+    boost_suppressed: bool = False             # R22 Boost-Reset (Track-Boost aus)
 
 
 @dataclass
@@ -333,8 +335,10 @@ def _assemble(
 
 
 def boost_active(inp: Inputs) -> bool:
-    """R18: HomePods-Track-Boost (Musik-Enum 1). Geblockt in work_home/work_away
-    und bei Quiet (Quiet wird strukturell schon im Ducked-Zweig abgefangen)."""
+    """R18: HomePods-Track-Boost (Musik-Enum 1). Geblockt in work_home/work_away,
+    bei Quiet (strukturell schon im Ducked-Zweig) und bei R22 Boost-Reset."""
+    if inp.boost_suppressed:
+        return False
     if inp.homepods_music_enum != MUSIC_ENUM_BOOST:
         return False
     if inp.quiet_mode:
@@ -403,7 +407,8 @@ def decide_volume(
         else:
             hp = _assemble(
                 _baseline(inp.day_state, HOMEPODS_BASELINES, s.homepods_base),
-                szenario_off=0.0, fenster_off=fenster, kontext_off=0.0, manual_off=0.0,
+                szenario_off=0.0, fenster_off=fenster, kontext_off=0.0,
+                manual_off=inp.manual_nudge,
                 boost=s.boost_offset if boost_flag else 0.0,
                 active_min=s.active_min, hard_max=s.homepods_max,
             )
@@ -415,7 +420,8 @@ def decide_volume(
             dn = _assemble(
                 _baseline(inp.day_state, DENON_BASELINES, s.denon_base),
                 szenario_off=(s.grind_denon_offset if grind else 0.0),
-                fenster_off=fenster, kontext_off=0.0, manual_off=0.0, boost=0.0,
+                fenster_off=fenster, kontext_off=0.0, manual_off=inp.manual_nudge,
+                boost=0.0,
                 active_min=s.active_min, hard_max=s.denon_max,
             )
     reason = "grind_homepods_denon_kulisse" if grind else f"owner_{owner}"
@@ -443,16 +449,18 @@ def volume_breakdown(
     fenster = s.opening_offset if inp.opening_any_open else 0.0
     boost_flag = hp_plays and boost_active(inp)
 
+    nudge = inp.manual_nudge
     def comp(base: float, szen: float, plays: bool, hard_max: float, boost: float) -> dict[str, Any]:
         win = fenster if plays else 0.0
+        man = nudge if plays else 0.0
         result = _assemble(
             base, szenario_off=szen, fenster_off=win, kontext_off=0.0,
-            manual_off=0.0, boost=boost, active_min=s.active_min, hard_max=hard_max,
+            manual_off=man, boost=boost, active_min=s.active_min, hard_max=hard_max,
         ) if plays else 0.0
         return {
             "base": round(base, 3), "scenario_offset": round(szen, 3),
             "window_offset": round(win, 3), "activity_offset": 0.0,
-            "manual_nudge": 0.0, "track_boost": round(boost, 3),
+            "manual_nudge": round(man, 3), "track_boost": round(boost, 3),
             "result": result, "plays": plays,
         }
 

@@ -11,7 +11,15 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
-from .const import DATA_COORDINATOR, DOMAIN, PROFILE_LABELS, WS_GET_STATUS
+from .const import (
+    DATA_COORDINATOR,
+    DOMAIN,
+    PROFILE_LABELS,
+    WS_GET_STATUS,
+    WS_NUDGE_VOLUME,
+    WS_RESET_BOOST,
+    WS_RESET_NUDGE,
+)
 
 
 def _coordinator(hass: HomeAssistant):
@@ -43,4 +51,42 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
             return
         connection.send_result(msg["id"], _status(coord))
 
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): WS_NUDGE_VOLUME,
+            vol.Required("delta"): vol.Coerce(float),
+        }
+    )
+    @websocket_api.async_response
+    async def ws_nudge_volume(hass, connection, msg) -> None:
+        coord = _coordinator(hass)
+        if coord is None:
+            connection.send_error(msg["id"], "not_ready", "Media Policy not loaded")
+            return
+        value = coord.async_nudge_volume(msg["delta"])
+        connection.send_result(msg["id"], {"manual_nudge": value})
+
+    @websocket_api.websocket_command({vol.Required("type"): WS_RESET_NUDGE})
+    @websocket_api.async_response
+    async def ws_reset_nudge(hass, connection, msg) -> None:
+        coord = _coordinator(hass)
+        if coord is None:
+            connection.send_error(msg["id"], "not_ready", "Media Policy not loaded")
+            return
+        coord.async_reset_nudge()
+        connection.send_result(msg["id"], {"manual_nudge": 0.0})
+
+    @websocket_api.websocket_command({vol.Required("type"): WS_RESET_BOOST})
+    @websocket_api.async_response
+    async def ws_reset_boost(hass, connection, msg) -> None:
+        coord = _coordinator(hass)
+        if coord is None:
+            connection.send_error(msg["id"], "not_ready", "Media Policy not loaded")
+            return
+        coord.async_reset_boost()
+        connection.send_result(msg["id"], {"boost_suppressed": True})
+
     websocket_api.async_register_command(hass, ws_get_status)
+    websocket_api.async_register_command(hass, ws_nudge_volume)
+    websocket_api.async_register_command(hass, ws_reset_nudge)
+    websocket_api.async_register_command(hass, ws_reset_boost)
