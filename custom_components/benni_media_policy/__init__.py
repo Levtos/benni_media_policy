@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DATA_COORDINATOR, DOMAIN, LEGACY_ENTITY_MAP
 from .coordinator import MediaPolicyCoordinator
-from .view import async_remove_view, async_setup_view
+from .view import async_remove_view
 from .websocket_api import async_setup_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    await async_setup_view(hass)
+    async_remove_view(hass)  # FLEET-66: kein eigenes Panel — benni_media-Umbrella ist die einzige Media-UI
     if not data.get(_WS_FLAG):
         async_setup_websocket_api(hass)
         data[_WS_FLAG] = True
