@@ -41,10 +41,22 @@ def test_owner_gaming():
     assert d.audio_owner == C.AUDIO_OWNER_GAMING
 
 
-def test_owner_private_via_context_quiet_bio():
+def test_owner_private_via_context_and_bio_not_quiet():
+    # private_time-Szenario + bio_sleep → PRIVATE; quiet_mode allein NICHT (FLEET-81:
+    # Quiet ist Volume-Overlay, kein Owner — koppelte früher fälschlich → pause).
     assert _decide(_inp(context=C.CTX_PRIVATE))[0].audio_owner == C.AUDIO_OWNER_PRIVATE
-    assert _decide(_inp(quiet_mode=True))[0].audio_owner == C.AUDIO_OWNER_PRIVATE
     assert _decide(_inp(bio_sleep=True))[0].audio_owner == C.AUDIO_OWNER_PRIVATE
+    # Quiet bei spielenden HomePods → Owner bleibt HOMEPODS (kein PRIVATE/pause).
+    assert _decide(_inp(quiet_mode=True, homepods_state="playing"))[0].audio_owner == C.AUDIO_OWNER_HOMEPODS
+
+
+def test_quiet_ducks_homepods_not_pause_fleet81():
+    # FLEET-81: Tür auf (quiet) bei spielenden HomePods → ducken, NICHT stoppen.
+    d, _ = _decide(_inp(quiet_mode=True, homepods_state="playing"))
+    assert d.action != C.ACTION_PAUSE
+    assert d.homepods_should_pause is False
+    assert d.volume_policy == C.VOL_POLICY_DUCKED
+    assert d.volume_target_homepods is not None and d.volume_target_homepods > 0.0
 
 
 # -------------------------------------------------------------- Volume base
