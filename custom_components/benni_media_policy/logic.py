@@ -194,8 +194,14 @@ class PolicyDecision:
 # --------------------------------------------------------------------------- #
 def decide_owner(inp: Inputs) -> tuple[str, str]:
     """audio_owner + Label aus dem Context. Priorität wie Lastenheft:
-    private_time > gaming > streaming/tv > homepods > none."""
-    if inp.quiet_mode or inp.bio_sleep or inp.context == CTX_PRIVATE:
+    private_time > gaming > streaming/tv > homepods > none.
+
+    WICHTIG (FLEET-81 / FLEET-31): `quiet_mode` gehört hier NICHT rein. Quiet (Tür/
+    Anruf, R20) ist ein reines Volume-Overlay (decide_volume duckt auf ducked_target),
+    KEIN Owner/Szenario. Früher koppelte quiet→PRIVATE → competes → pause_homepods
+    UND hp_plays=False → Ducked-HomePods=0.0 statt 0.10 (= „Wiedergabe komplett
+    gestoppt"). bio_sleep bleibt (R25: HomePods aus), CTX_PRIVATE ist das echte Szenario."""
+    if inp.bio_sleep or inp.context == CTX_PRIVATE:
         return AUDIO_OWNER_PRIVATE, "private_time"
     if inp.context == CTX_GAMING:
         return AUDIO_OWNER_GAMING, f"gaming_{inp.device or 'unknown'}"
