@@ -19,6 +19,7 @@ from .const import (
     PROFILE_LABELS,
     UID_ACTION,
     UID_AUDIO_OWNER,
+    UID_AUDIO_SCENARIO,
     UID_HOMEPODS_RESUME_ALLOWED,
     UID_HOMEPODS_SHOULD_PAUSE,
     UID_SUBWOOFER_ALLOWED,
@@ -38,12 +39,17 @@ class FieldDesc:
     name: str           # friendly name
     icon: str | None = None
     unit: str | None = None
+    attr_keys: tuple[str, ...] = ()   # zusätzliche data-Felder als state-attributes
 
 
 SENSORS: tuple[FieldDesc, ...] = (
     FieldDesc("volume_target_homepods", UID_VOLUME_TARGET_HOMEPODS, "Volume Target HomePods", "mdi:speaker", "%"),
     FieldDesc("volume_target_denon", UID_VOLUME_TARGET_DENON, "Volume Target Denon", "mdi:audio-video", "%"),
     FieldDesc("audio_owner", UID_AUDIO_OWNER, "Audio Owner", "mdi:account-music"),
+    FieldDesc(
+        "audio_scenario", UID_AUDIO_SCENARIO, "Audio Scenario", "mdi:music-circle",
+        attr_keys=("audio_scenario_label", "audio_scenario_detail"),
+    ),
     FieldDesc("action", UID_ACTION, "Action", "mdi:play-pause"),
     FieldDesc("volume_policy", UID_VOLUME_POLICY, "Volume Policy", "mdi:tune-variant"),
 )
@@ -92,3 +98,10 @@ class MediaPolicyEntity(CoordinatorEntity[MediaPolicyCoordinator]):
     @property
     def _value(self) -> Any:
         return (self.coordinator.data or {}).get(self._desc.key)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if not self._desc.attr_keys:
+            return None
+        data = self.coordinator.data or {}
+        return {k: data.get(k) for k in self._desc.attr_keys}

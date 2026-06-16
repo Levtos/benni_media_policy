@@ -24,6 +24,25 @@ Hub + Auto-Bind + WS-Contract + Vanilla-Panel. Apply gated (Shadow-safe).
 - Entity-Roster finalisieren (aktuell vorläufig).
 - Apply erst nach Verifikation aktivieren (`apply_enabled`).
 
+## audio_scenario — Desired-Audio-Wahrheit ✅ (0.7.0, FLEET-85)
+
+Neuer Sensor `sensor.<profil>_media_policy_audio_scenario`: die **immer aus der
+Konstellation abgeleitete** Soll-Audio-Wahrheit, unabhängig vom beobachtbaren
+Player-Zustand (idle/unavailable/playing). State = Enum
+(`off`/`private`/`gaming`/`tv`/`music`), Attribute `audio_scenario_label`
+(human-readable) + `audio_scenario_detail` (Sender/Plattform/Source).
+
+**Kernregel (Benni):** kein Screen-/Sleep-Szenario aktiv → **Musik ist die
+Baseline** (nicht „idle"). Fixt den Umbrella-„idle"-Bug: `owner == NONE`
+(HomePods spielen gerade nicht) ⇒ `music`, nicht idle. Quiet bleibt ein
+Volume-Overlay (kein Szenario — die Umbrella komponiert das Leise-Badge aus
+`quiet_mode`). Sender-Detail aus `input_select.media_radio_station`
+(`CONF_RADIO_STATION`). Pure-Logic `decide_audio_scenario`, 10 neue Tests.
+
+Konsumenten: **FLEET-86** (Umbrella-Status zeigt audio_scenario statt
+media_context), **FLEET-84** (media_apply converge-to-desired — re-assert Soll
+bei Drift/Reconnect, zielt auf *aktuelles* audio_scenario, nie auf Snapshot).
+
 ## Konsum-Vertrag
 
 Konsumiert `benni_media_state` **nur über Entity-State** — nie per Python-Import.

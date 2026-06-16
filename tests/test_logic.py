@@ -368,3 +368,72 @@ def test_volume_breakdown_reports_nudge():
     )
     assert bd["homepods"]["manual_nudge"] == 0.10
     assert bd["denon"]["manual_nudge"] == 0.0  # spielt nicht → kein Nudge
+
+
+# ----------------------------------------- audio_scenario / Desired-Audio (FLEET-85)
+def test_scenario_idle_constellation_is_music_baseline():
+    # Kein Owner, HomePods spielen nicht → trotzdem MUSIC (nicht idle). Der Fix.
+    d, _ = _decide(_inp())
+    assert d.audio_owner == C.AUDIO_OWNER_NONE
+    assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
+    assert d.audio_scenario_label == "Musik"
+
+
+def test_scenario_music_when_homepods_playing_with_station():
+    d, _ = _decide(_inp(homepods_state="playing", radio_station="GAYFM"))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
+    assert d.audio_scenario_detail == "GAYFM"
+
+
+def test_scenario_station_detail_in_idle_baseline():
+    # Auch in der Baseline (owner NONE) trägt der gewählte Sender ins Detail.
+    d, _ = _decide(_inp(radio_station="  byte.fm  "))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
+    assert d.audio_scenario_detail == "byte.fm"   # getrimmt
+
+
+def test_scenario_tv_with_context_detail():
+    d, _ = _decide(_inp(context=C.CTX_TV))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_TV
+    assert d.audio_scenario_detail == C.CTX_TV
+    d2, _ = _decide(_inp(context=C.CTX_STREAMING))
+    assert d2.audio_scenario == C.AUDIO_SCENARIO_TV
+    assert d2.audio_scenario_detail == C.CTX_STREAMING
+
+
+def test_scenario_gaming_with_platform_detail():
+    d, _ = _decide(_inp(context=C.CTX_GAMING, device="ps5"))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_GAMING
+    assert d.audio_scenario_detail == "ps5"
+
+
+def test_scenario_grind_is_gaming():
+    d, _ = _decide(_inp(context=C.CTX_GAMING, subcontext=C.SUB_GAME_GRIND, device="ps5"))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_GAMING
+
+
+def test_scenario_private_via_context():
+    d, _ = _decide(_inp(context=C.CTX_PRIVATE))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_PRIVATE
+
+
+def test_scenario_off_when_bio_sleep():
+    # Sleep dominiert (R25) → off, auch wenn ein TV-Context anliegt.
+    d, _ = _decide(_inp(bio_sleep=True, context=C.CTX_TV))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
+    assert d.audio_scenario_label == "Aus"
+
+
+def test_scenario_quiet_is_overlay_not_scenario():
+    # Quiet ist ein Volume-Overlay → Szenario bleibt die Baseline (music), nicht „quiet".
+    d, _ = _decide(_inp(quiet_mode=True, homepods_state="playing"))
+    assert d.volume_policy == C.VOL_POLICY_DUCKED
+    assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
+
+
+def test_scenario_exposed_in_as_dict():
+    d, _ = _decide(_inp(homepods_state="playing", radio_station="GAYFM"))
+    data = d.as_dict()
+    assert data["audio_scenario"] == C.AUDIO_SCENARIO_MUSIC
+    assert data["audio_scenario_label"] == "Musik"
+    assert data["audio_scenario_detail"] == "GAYFM"

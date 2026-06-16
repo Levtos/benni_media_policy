@@ -78,6 +78,28 @@ RESUME_MODE_RADIO: Final = "radio"
 BIO_SLEEP_VALUES: Final = ("sleep", "sleeping", "asleep")
 
 # --------------------------------------------------------------------------- #
+# Audio-Scenario — Desired-Audio-Wahrheit (FLEET-85). Immer aus der Konstellation
+# abgeleitet, unabhängig vom beobachtbaren Player-Zustand (idle/unavailable/
+# playing). Kernregel (Benni): kein Screen-/Sleep-Szenario aktiv → Musik ist die
+# Baseline (nie „idle"). Quiet bleibt ein Volume-Overlay (binary_sensor.*_quiet_
+# mode), KEIN Szenario. Konsumenten: Umbrella-Status (FLEET-86), Apply-Converge
+# (FLEET-84).
+# --------------------------------------------------------------------------- #
+AUDIO_SCENARIO_OFF: Final = "off"
+AUDIO_SCENARIO_PRIVATE: Final = "private"
+AUDIO_SCENARIO_GAMING: Final = "gaming"
+AUDIO_SCENARIO_TV: Final = "tv"
+AUDIO_SCENARIO_MUSIC: Final = "music"
+
+AUDIO_SCENARIO_LABELS: Final[dict[str, str]] = {
+    AUDIO_SCENARIO_OFF: "Aus",
+    AUDIO_SCENARIO_PRIVATE: "Privat",
+    AUDIO_SCENARIO_GAMING: "Gaming",
+    AUDIO_SCENARIO_TV: "TV",
+    AUDIO_SCENARIO_MUSIC: "Musik",
+}
+
+# --------------------------------------------------------------------------- #
 # Volume-Policy-Zustände (volume_orchestrator-Lift).
 # --------------------------------------------------------------------------- #
 VOL_POLICY_IDLE: Final = "idle"
@@ -152,6 +174,7 @@ CONF_HOMEPODS_MUSIC_ENUM: Final[str] = "homepods_music_enum_entity"  # R18/R19 B
 CONF_MANUAL_PLAYBACK: Final[str] = "manual_playback_entity"
 CONF_PLANNED_RADIO: Final[str] = "planned_radio_entity"
 CONF_MEDIA_STOP_LATCH: Final[str] = "media_stop_latch_entity"
+CONF_RADIO_STATION: Final[str] = "radio_station_entity"  # input_select Sender → audio_scenario-Detail (FLEET-85)
 
 # Keys, deren gebundene Entities der Coordinator beobachtet (event-driven).
 WATCH_KEYS: Final[tuple[str, ...]] = (
@@ -161,6 +184,7 @@ WATCH_KEYS: Final[tuple[str, ...]] = (
     CONF_BIO_STATE, CONF_DAY_STATE, CONF_ACTIVITY_STATE, CONF_OPENING,
     CONF_HOMEPODS_MUSIC_ENUM,
     CONF_MANUAL_PLAYBACK, CONF_PLANNED_RADIO, CONF_MEDIA_STOP_LATCH,
+    CONF_RADIO_STATION,
 )
 
 # Subwoofer ist nur ein Apply-Target (kein beobachteter Input).
@@ -192,6 +216,7 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_HOMEPODS_MUSIC_ENUM: "sensor.title_classifier_musikkatalog_enum",
         CONF_MANUAL_PLAYBACK: "binary_sensor.media_manual_playback_active",
         CONF_PLANNED_RADIO: "binary_sensor.media_radio_playing_planned_station",
+        CONF_RADIO_STATION: "input_select.media_radio_station",
     },
     PROFILE_ELTERN: {},
 }
@@ -252,6 +277,9 @@ DEFAULT_DATA: Final[dict[str, Any]] = {
     "volume_target_homepods": None,
     "volume_target_denon": None,
     "audio_owner": AUDIO_OWNER_NONE,
+    "audio_scenario": AUDIO_SCENARIO_MUSIC,
+    "audio_scenario_label": AUDIO_SCENARIO_LABELS[AUDIO_SCENARIO_MUSIC],
+    "audio_scenario_detail": None,
     "action": ACTION_NONE,
     "volume_policy": VOL_POLICY_IDLE,
     "subwoofer_allowed": False,
@@ -266,6 +294,7 @@ DEFAULT_DATA: Final[dict[str, Any]] = {
 UID_VOLUME_TARGET_HOMEPODS: Final[str] = "volume_target_homepods"
 UID_VOLUME_TARGET_DENON: Final[str] = "volume_target_denon"
 UID_AUDIO_OWNER: Final[str] = "audio_owner"
+UID_AUDIO_SCENARIO: Final[str] = "audio_scenario"
 UID_ACTION: Final[str] = "action"
 UID_VOLUME_POLICY: Final[str] = "volume_policy"
 UID_SUBWOOFER_ALLOWED: Final[str] = "subwoofer_allowed"

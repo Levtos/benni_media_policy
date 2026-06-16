@@ -27,6 +27,7 @@
           "homepods_music_enum_entity": "HomePods Musik-Enum (title_classifier) · Boost/Mute",
           "manual_playback_entity": "Manuelle Wiedergabe aktiv",
           "planned_radio_entity": "Geplanter Radio-Sender aktiv",
+          "radio_station_entity": "Radio-Sender (input_select) · audio_scenario-Detail",
           "media_stop_latch_entity": "Media-Stop-Latch (optional)"
         }
       },
@@ -77,6 +78,7 @@
           "homepods_music_enum_entity": "HomePods Musik-Enum (title_classifier) · Boost/Mute",
           "manual_playback_entity": "Manuelle Wiedergabe aktiv",
           "planned_radio_entity": "Geplanter Radio-Sender aktiv",
+          "radio_station_entity": "Radio-Sender (input_select) · audio_scenario-Detail",
           "media_stop_latch_entity": "Media-Stop-Latch (optional)"
         }
       },

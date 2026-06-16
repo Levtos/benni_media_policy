@@ -42,6 +42,12 @@ from .const import (
     AUDIO_OWNER_NONE,
     AUDIO_OWNER_PRIVATE,
     AUDIO_OWNER_TV_DENON,
+    AUDIO_SCENARIO_GAMING,
+    AUDIO_SCENARIO_LABELS,
+    AUDIO_SCENARIO_MUSIC,
+    AUDIO_SCENARIO_OFF,
+    AUDIO_SCENARIO_PRIVATE,
+    AUDIO_SCENARIO_TV,
     BOOST_BLOCK_ACTIVITIES,
     CTX_GAMING,
     CTX_PRIVATE,
@@ -103,6 +109,7 @@ class Inputs:
     local_minute_of_day: Optional[int] = None  # Wanduhr-Floor Subwoofer (09:00)
     manual_playback_active: bool = False
     planned_radio_active: bool = False
+    radio_station: Optional[str] = None        # gewählter Sender (audio_scenario-Detail)
     media_stop_latch: Optional[bool] = None   # None = nicht konfiguriert
     manual_nudge: float = 0.0                  # R21 ±0.10-Nudge (Laufzeit, Cockpit)
     boost_suppressed: bool = False             # R22 Boost-Reset (Track-Boost aus)
@@ -144,6 +151,9 @@ class PolicyDecision:
     volume_target_homepods: Optional[float] = None
     volume_target_denon: Optional[float] = None
     audio_owner: str = AUDIO_OWNER_NONE
+    audio_scenario: str = AUDIO_SCENARIO_MUSIC
+    audio_scenario_label: str = AUDIO_SCENARIO_LABELS[AUDIO_SCENARIO_MUSIC]
+    audio_scenario_detail: Optional[str] = None
     action: str = ACTION_NONE
     volume_policy: str = VOL_POLICY_IDLE
     subwoofer_allowed: bool = False
@@ -166,6 +176,9 @@ class PolicyDecision:
             "volume_target_homepods": self.volume_target_homepods,
             "volume_target_denon": self.volume_target_denon,
             "audio_owner": self.audio_owner,
+            "audio_scenario": self.audio_scenario,
+            "audio_scenario_label": self.audio_scenario_label,
+            "audio_scenario_detail": self.audio_scenario_detail,
             "action": self.action,
             "volume_policy": self.volume_policy,
             "subwoofer_allowed": self.subwoofer_allowed,
@@ -210,6 +223,31 @@ def decide_owner(inp: Inputs) -> tuple[str, str]:
     if inp.homepods_state == "playing":
         return AUDIO_OWNER_HOMEPODS, "homepods_only"
     return AUDIO_OWNER_NONE, "idle"
+
+
+def decide_audio_scenario(
+    inp: Inputs, owner: str, grind: bool
+) -> tuple[str, str, Optional[str]]:
+    """Desired-Audio-Wahrheit (FLEET-85): (scenario, label, detail).
+
+    Immer aus der Konstellation abgeleitet, UNABHÄNGIG vom beobachtbaren Player-
+    Zustand (idle/unavailable/playing). Kernregel (Benni): kein Screen-/Sleep-
+    Szenario aktiv → Musik ist die Baseline. Genau das fixt den „idle"-Bug:
+    owner == NONE (HomePods spielen gerade nicht) ergibt NICHT idle, sondern
+    music. Quiet bleibt ein Volume-Overlay (decide_volume → ducked), KEIN
+    Szenario — die Umbrella komponiert das Leise-Badge aus quiet_mode."""
+    if inp.bio_sleep:
+        scenario, detail = AUDIO_SCENARIO_OFF, None
+    elif owner == AUDIO_OWNER_PRIVATE:
+        scenario, detail = AUDIO_SCENARIO_PRIVATE, None
+    elif owner == AUDIO_OWNER_GAMING or grind:
+        scenario, detail = AUDIO_SCENARIO_GAMING, (inp.device or None)
+    elif owner == AUDIO_OWNER_TV_DENON:
+        scenario, detail = AUDIO_SCENARIO_TV, (inp.context or None)
+    else:
+        # owner HOMEPODS oder NONE → Musik-Baseline (der Fix gegen „idle").
+        scenario, detail = AUDIO_SCENARIO_MUSIC, ((inp.radio_station or "").strip() or None)
+    return scenario, AUDIO_SCENARIO_LABELS[scenario], detail
 
 
 def is_grind(inp: Inputs) -> bool:
@@ -573,6 +611,12 @@ def decide(
     d.audio_owner = owner
     d.owner_reason = owner_label
     reasons.append(f"owner:{owner_label}")
+
+    scenario, scenario_label, scenario_detail = decide_audio_scenario(inp, owner, grind)
+    d.audio_scenario = scenario
+    d.audio_scenario_label = scenario_label
+    d.audio_scenario_detail = scenario_detail
+    reasons.append(f"scenario:{scenario}")
 
     competes = competes_with_homepods(owner, grind)
     action, should_pause, resume_allowed, action_reason, new_state = decide_action(
