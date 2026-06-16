@@ -212,7 +212,7 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_BIO_STATE: "sensor.benni_core_state_bio_state",
         CONF_DAY_STATE: "sensor.benni_combined_context_day_state",
         CONF_ACTIVITY_STATE: "sensor.benni_core_state_activity_state",
-        CONF_OPENING: "sensor.benni_combined_opening_any_open",
+        CONF_OPENING: "sensor.benni_combined_opening_any_open_or_tilted",
         CONF_HOMEPODS_MUSIC_ENUM: "sensor.title_classifier_musikkatalog_enum",
         CONF_MANUAL_PLAYBACK: "binary_sensor.media_manual_playback_active",
         CONF_PLANNED_RADIO: "binary_sensor.media_radio_playing_planned_station",
@@ -223,6 +223,9 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
 
 LEGACY_ENTITY_MAP: Final[dict[str, str]] = {
     "sensor.benni_core_day_state": "sensor.benni_combined_context_day_state",
+    # FLEET-87: Fenster-Offset muss Kipp (halb offen) zählen. opening_any_open ist
+    # „nur voll offen" → auf das kipp-inklusive Combined remappen (live auto-migrate).
+    "sensor.benni_combined_opening_any_open": "sensor.benni_combined_opening_any_open_or_tilted",
     # FLEET-64-retirete Atomics/Combineds → core_devices (Diagnostics-Fund).
     "binary_sensor.living_denon_plug_power_active_atomic": "sensor.benni_device_living_avr",
     "binary_sensor.opening_any_open_combined": "sensor.benni_combined_opening_any_open",
