@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 - FLEET-94
+
+- Force existing ConfigEntry source migrations for the openings master on setup and via config entry version 3.
+
 ## 0.8.1 - FLEET-94
 
 - Rebind opening offset input to the Core Devices openings master.

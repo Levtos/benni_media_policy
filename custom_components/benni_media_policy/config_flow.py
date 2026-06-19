@@ -122,7 +122,7 @@ def _profile_schema(default: str) -> vol.Schema:
 
 
 class MediaPolicyConfigFlow(ConfigFlow, domain=DOMAIN):
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:
         self._profile: str = DEFAULT_PROFILE

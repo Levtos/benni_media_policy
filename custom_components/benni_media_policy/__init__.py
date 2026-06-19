@@ -23,7 +23,24 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 _WS_FLAG = "_ws_registered"
 
 
+def _migrated_entry_sources(entry: ConfigEntry) -> tuple[bool, dict, dict]:
+    changed = False
+    data = dict(entry.data)
+    options = dict(entry.options)
+    for target in (data, options):
+        for key, value in list(target.items()):
+            if isinstance(value, str) and value in LEGACY_ENTITY_MAP:
+                target[key] = LEGACY_ENTITY_MAP[value]
+                changed = True
+    return changed, data, options
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    changed, data, options = _migrated_entry_sources(entry)
+    if changed:
+        hass.config_entries.async_update_entry(entry, data=data, options=options)
+        _LOGGER.info("Migrated benni_media_policy entity bindings during setup")
+
     coord = MediaPolicyCoordinator(hass, entry)
     await coord.async_config_entry_first_refresh()
     coord.async_start()
@@ -44,21 +61,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate retired entity IDs from earlier prefills."""
-    changed = False
-    data = dict(entry.data)
-    options = dict(entry.options)
-    for target in (data, options):
-        for key, value in list(target.items()):
-            if isinstance(value, str) and value in LEGACY_ENTITY_MAP:
-                target[key] = LEGACY_ENTITY_MAP[value]
-                changed = True
+    changed, data, options = _migrated_entry_sources(entry)
 
-    if changed or entry.version < 2:
+    if changed or entry.version < 3:
         hass.config_entries.async_update_entry(
             entry,
             data=data,
             options=options,
-            version=2,
+            version=3,
         )
         _LOGGER.info("Migrated benni_media_policy entity bindings")
     return True
