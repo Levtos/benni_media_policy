@@ -57,6 +57,8 @@ from .const import (
     CONF_VOL_HOMEPODS_MAX,
     CONF_VOL_OPENING_OFFSET,
     CONF_GRIND_DENON_OFFSET,
+    CORE_OPENINGS_MASTER_ENTITY,
+    CORE_OPENINGS_MEDIA_ATTRIBUTE,
     DEFAULT_APPLY_ENABLED,
     DEFAULT_PROFILE,
     DOMAIN,
@@ -217,6 +219,11 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_HOMEPODS, "media_title"
         )
 
+    def _opening_any_not_closed(self) -> bool:
+        if self._entity_id(CONF_OPENING) == CORE_OPENINGS_MASTER_ENTITY:
+            return _bool(self._attr(CONF_OPENING, CORE_OPENINGS_MEDIA_ATTRIBUTE))
+        return _bool(self._state(CONF_OPENING))
+
     # ----- evaluation -----
     def _build_inputs(self) -> logic.Inputs:
         bio = self._state(CONF_BIO_STATE)
@@ -238,7 +245,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             day_state=self._state(CONF_DAY_STATE),
             activity_context=self._state(CONF_ACTIVITY_STATE),
             homepods_music_enum=_opt_int(self._state(CONF_HOMEPODS_MUSIC_ENUM)),
-            opening_any_open=_bool(self._state(CONF_OPENING)),
+            opening_any_open=self._opening_any_not_closed(),
             local_minute_of_day=self._local_minute_of_day(),
             manual_playback_active=_bool(self._state(CONF_MANUAL_PLAYBACK)),
             planned_radio_active=_bool(self._state(CONF_PLANNED_RADIO)),

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1 - FLEET-94
+
+- Rebind opening offset input to the Core Devices openings master.
+- Read `any_not_closed` from `sensor.benni_combined_openings` so tilted openings still apply the media volume offset.
+- Migrate previous opening combined bindings to the master entity.
+
 ## 0.4.1 — FLEET-54 Core Day-State Prefill
 
 - `day_state_entity` im Benni-Prefill zeigt jetzt auf

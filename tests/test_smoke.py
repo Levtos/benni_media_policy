@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import bmp_logic as logic
+import bmp_const as const
 
 
 def test_logic_imports():
@@ -31,3 +32,17 @@ def test_decide_defaults():
     assert data["volume_policy"] == "blocked"
     assert data["volume_apply_allowed"] is False
     assert data["subwoofer_allowed"] is False
+
+
+def test_opening_prefill_and_migrations_use_master_contract():
+    prefill = const.PROFILE_PREFILL[const.PROFILE_BENNI]
+
+    assert prefill[const.CONF_OPENING] == const.CORE_OPENINGS_MASTER_ENTITY
+    assert (
+        const.LEGACY_ENTITY_MAP["sensor.benni_combined_opening_any_open_or_tilted"]
+        == const.CORE_OPENINGS_MASTER_ENTITY
+    )
+    assert (
+        const.LEGACY_ENTITY_MAP["binary_sensor.opening_any_open_combined"]
+        == const.CORE_OPENINGS_MASTER_ENTITY
+    )

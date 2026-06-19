@@ -170,6 +170,8 @@ CONF_BIO_STATE: Final[str] = "bio_state_entity"
 CONF_DAY_STATE: Final[str] = "day_state_entity"
 CONF_ACTIVITY_STATE: Final[str] = "activity_state_entity"   # R18 Boost-Block (work_*)
 CONF_OPENING: Final[str] = "opening_any_open_entity"   # Fenster/Tür offen → Offset
+CORE_OPENINGS_MASTER_ENTITY: Final[str] = "sensor.benni_combined_openings"
+CORE_OPENINGS_MEDIA_ATTRIBUTE: Final[str] = "any_not_closed"
 CONF_HOMEPODS_MUSIC_ENUM: Final[str] = "homepods_music_enum_entity"  # R18/R19 Boost/Mute
 CONF_MANUAL_PLAYBACK: Final[str] = "manual_playback_entity"
 CONF_PLANNED_RADIO: Final[str] = "planned_radio_entity"
@@ -212,7 +214,7 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_BIO_STATE: "sensor.benni_core_state_bio_state",
         CONF_DAY_STATE: "sensor.benni_combined_context_day_state",
         CONF_ACTIVITY_STATE: "sensor.benni_core_state_activity_state",
-        CONF_OPENING: "sensor.benni_combined_opening_any_open_or_tilted",
+        CONF_OPENING: CORE_OPENINGS_MASTER_ENTITY,
         CONF_HOMEPODS_MUSIC_ENUM: "sensor.title_classifier_musikkatalog_enum",
         CONF_MANUAL_PLAYBACK: "binary_sensor.media_manual_playback_active",
         CONF_PLANNED_RADIO: "binary_sensor.media_radio_playing_planned_station",
@@ -223,12 +225,12 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
 
 LEGACY_ENTITY_MAP: Final[dict[str, str]] = {
     "sensor.benni_core_day_state": "sensor.benni_combined_context_day_state",
-    # FLEET-87: Fenster-Offset muss Kipp (halb offen) zählen. opening_any_open ist
-    # „nur voll offen" → auf das kipp-inklusive Combined remappen (live auto-migrate).
-    "sensor.benni_combined_opening_any_open": "sensor.benni_combined_opening_any_open_or_tilted",
+    # FLEET-94: Fenster-Offset liest Kipp/offen aus dem Openings-Master.
+    "sensor.benni_combined_opening_any_open": CORE_OPENINGS_MASTER_ENTITY,
+    "sensor.benni_combined_opening_any_open_or_tilted": CORE_OPENINGS_MASTER_ENTITY,
     # FLEET-64-retirete Atomics/Combineds → core_devices (Diagnostics-Fund).
     "binary_sensor.living_denon_plug_power_active_atomic": "sensor.benni_device_living_avr",
-    "binary_sensor.opening_any_open_combined": "sensor.benni_combined_opening_any_open",
+    "binary_sensor.opening_any_open_combined": CORE_OPENINGS_MASTER_ENTITY,
 }
 
 # --------------------------------------------------------------------------- #
