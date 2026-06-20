@@ -64,6 +64,7 @@ from .const import (
     DEFAULT_VOL_OPENING_OFFSET,
     DENON_BASELINES,
     DEV_DENON,
+    DEV_PC,
     HOMEPODS_BASELINES,
     MUSIC_ENUM_BOOST,
     MUSIC_ENUM_MUTE,
@@ -167,6 +168,7 @@ class PolicyDecision:
     subwoofer_block_reason: Optional[str] = None
     denon_audio_path: bool = False
     is_grind: bool = False
+    is_pc_gaming: bool = False
     track_boost_applied: bool = False
     music_muted: bool = False
     active_reasons: list = field(default_factory=list)
@@ -196,6 +198,7 @@ class PolicyDecision:
             "subwoofer_block_reason": self.subwoofer_block_reason,
             "denon_audio_path": self.denon_audio_path,
             "is_grind": self.is_grind,
+            "is_pc_gaming": self.is_pc_gaming,
             "track_boost_applied": self.track_boost_applied,
             "music_muted": self.music_muted,
             "active_reasons": list(self.active_reasons),
@@ -255,10 +258,20 @@ def is_grind(inp: Inputs) -> bool:
     return inp.context == CTX_GAMING and inp.subcontext == SUB_GAME_GRIND
 
 
-def competes_with_homepods(owner: str, grind: bool) -> bool:
+def is_pc_gaming(inp: Inputs) -> bool:
+    """FLEET-101: PC-Gaming (device == pc im Gaming-Context). Game-Audio läuft am
+    Schreibtisch/Headset, NICHT über die Raum-Speaker → HomePods-Musik spielt
+    weiter, Denon bleibt aus. Bewusst am Device gebunden (nicht am headset-Enum),
+    damit die Title-Classifier-Headset-Bugs (FLEET-97) das nicht aushebeln.
+    Gilt für jeden Gaming-Subcontext (default/headset/grind) auf dem PC."""
+    return inp.context == CTX_GAMING and inp.device == DEV_PC
+
+
+def competes_with_homepods(owner: str, grind: bool, pc_gaming: bool = False) -> bool:
     """Stack, der die HomePods verdrängt. GRIND hat HomePods-Anteil (R15) →
-    konkurriert NICHT, HomePods spielen weiter."""
-    if grind:
+    konkurriert NICHT, HomePods spielen weiter. PC-Gaming (FLEET-101) ebenso:
+    Game-Audio ist im Headset, Raum-Musik läuft weiter."""
+    if grind or pc_gaming:
         return False
     return owner in (AUDIO_OWNER_PRIVATE, AUDIO_OWNER_GAMING, AUDIO_OWNER_TV_DENON)
 
@@ -411,8 +424,12 @@ def decide_volume(
     if inp.bio_sleep:
         return VOL_POLICY_MUTED, None, None, False, "bio_sleep_muted", False, False
 
-    # ---- Routing: welche Seite spielt? GRIND → beide (HomePods dominant). ----
-    if grind:
+    # ---- Routing: welche Seite spielt? PC-Gaming (FLEET-101) → HomePods normal,
+    # Denon aus (Game-Audio im Headset). GRIND → beide (HomePods dominant). ----
+    pc_gaming = is_pc_gaming(inp)
+    if pc_gaming:
+        hp_plays, dn_plays = True, False
+    elif grind:
         hp_plays, dn_plays = True, True
     elif owner == AUDIO_OWNER_HOMEPODS:
         hp_plays, dn_plays = True, False
@@ -468,7 +485,12 @@ def decide_volume(
                 boost=0.0,
                 active_min=s.active_min, hard_max=s.denon_max,
             )
-    reason = "grind_homepods_denon_kulisse" if grind else f"owner_{owner}"
+    if pc_gaming:
+        reason = "pc_gaming_homepods_denon_off"
+    elif grind:
+        reason = "grind_homepods_denon_kulisse"
+    else:
+        reason = f"owner_{owner}"
     return VOL_POLICY_MEDIA, hp, dn, True, reason, boost_flag, muted_flag
 
 
@@ -482,7 +504,9 @@ def volume_breakdown(
 ) -> dict[str, Any]:
     """R17-Komponenten je Gerät (base · scenario · window · activity · nudge ·
     boost → result). Nur im MEDIA-Zweig voll aussagekräftig; sonst result=0/—."""
-    if grind:
+    if is_pc_gaming(inp):
+        hp_plays, dn_plays = True, False
+    elif grind:
         hp_plays, dn_plays = True, True
     elif owner == AUDIO_OWNER_HOMEPODS:
         hp_plays, dn_plays = True, False
@@ -607,6 +631,9 @@ def decide(
     grind = is_grind(inp)
     d.is_grind = grind
 
+    pc_gaming = is_pc_gaming(inp)
+    d.is_pc_gaming = pc_gaming
+
     owner, owner_label = decide_owner(inp)
     d.audio_owner = owner
     d.owner_reason = owner_label
@@ -618,7 +645,7 @@ def decide(
     d.audio_scenario_detail = scenario_detail
     reasons.append(f"scenario:{scenario}")
 
-    competes = competes_with_homepods(owner, grind)
+    competes = competes_with_homepods(owner, grind, pc_gaming)
     action, should_pause, resume_allowed, action_reason, new_state = decide_action(
         inp, owner, competes, state
     )

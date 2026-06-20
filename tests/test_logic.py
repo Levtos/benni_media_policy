@@ -156,9 +156,63 @@ def test_grind_subwoofer_always_off():
 
 
 def test_non_grind_gaming_pauses_homepods():
-    # gaming_default (kein Grind) verdrängt HomePods.
+    # gaming_default (kein Grind, kein PC) verdrängt HomePods.
     d, _ = _decide(_inp(context=C.CTX_GAMING, subcontext="gaming_default",
                         homepods_state="playing"))
+    assert d.homepods_should_pause is True
+    assert d.action == C.ACTION_PAUSE
+
+
+# --------------------------------------------------- PC-Gaming (FLEET-101)
+def test_pc_gaming_flag():
+    d, _ = _decide(_inp(context=C.CTX_GAMING, device=C.DEV_PC))
+    assert d.is_pc_gaming is True
+
+
+def test_pc_gaming_does_not_pause_homepods():
+    # FLEET-101: PC-Gaming → Game-Audio im Headset, Raum-Musik läuft weiter.
+    d, _ = _decide(_inp(context=C.CTX_GAMING, device=C.DEV_PC,
+                        subcontext="gaming_default", homepods_state="playing"))
+    assert d.homepods_should_pause is False
+    assert d.action != C.ACTION_PAUSE
+
+
+def test_pc_gaming_homepods_normal_denon_off():
+    d, _ = _decide(_inp(context=C.CTX_GAMING, device=C.DEV_PC,
+                        subcontext="gaming_default"))
+    assert d.volume_target_homepods == 0.35   # normale Musik-Baseline
+    assert d.volume_target_denon == 0.0        # Denon aus
+    assert d.volume_policy == C.VOL_POLICY_MEDIA
+    assert d.volume_reason == "pc_gaming_homepods_denon_off"
+
+
+def test_pc_gaming_headset_still_plays_music():
+    # Robust gegen Title-Classifier-Headset-Bugs (FLEET-97): am Device gebunden,
+    # nicht am headset-Enum → auch im gaming_headset-Subcontext läuft Musik weiter.
+    d, _ = _decide(_inp(context=C.CTX_GAMING, device=C.DEV_PC,
+                        subcontext="gaming_headset", headset_active=True,
+                        homepods_state="playing"))
+    assert d.is_pc_gaming is True
+    assert d.homepods_should_pause is False
+    assert d.volume_target_homepods == 0.35
+    assert d.volume_target_denon == 0.0
+
+
+def test_pc_grind_pc_routing_wins_denon_off():
+    # PC + grind: PC-Gaming-Routing übersteuert die Grind-Denon-Kulisse.
+    d, _ = _decide(_inp(context=C.CTX_GAMING, device=C.DEV_PC,
+                        subcontext=C.SUB_GAME_GRIND))
+    assert d.is_pc_gaming is True
+    assert d.is_grind is True
+    assert d.volume_target_homepods == 0.35
+    assert d.volume_target_denon == 0.0   # NICHT Grind-Kulisse (0.28)
+
+
+def test_ps5_gaming_still_pauses_regression():
+    # Regression-Guard: PS5 bleibt unverändert (verdrängt HomePods).
+    d, _ = _decide(_inp(context=C.CTX_GAMING, device="ps5",
+                        subcontext="gaming_default", homepods_state="playing"))
+    assert d.is_pc_gaming is False
     assert d.homepods_should_pause is True
     assert d.action == C.ACTION_PAUSE
 
