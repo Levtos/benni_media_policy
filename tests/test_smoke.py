@@ -38,6 +38,15 @@ def test_opening_prefill_and_migrations_use_master_contract():
     prefill = const.PROFILE_PREFILL[const.PROFILE_BENNI]
 
     assert prefill[const.CONF_OPENING] == const.CORE_OPENINGS_MASTER_ENTITY
+    assert prefill[const.CONF_DENON_ACTIVE] == "sensor.benni_master_denon"
+    assert (
+        const.LEGACY_ENTITY_MAP["sensor.benni_device_living_avr"]
+        == "sensor.benni_master_denon"
+    )
+    assert (
+        const.LEGACY_ENTITY_MAP["binary_sensor.living_denon_plug_power_active_atomic"]
+        == "sensor.benni_master_denon"
+    )
     assert (
         const.LEGACY_ENTITY_MAP["sensor.benni_combined_opening_any_open_or_tilted"]
         == const.CORE_OPENINGS_MASTER_ENTITY

@@ -99,7 +99,7 @@ class Inputs:
     homepods_state: Optional[str] = None      # "playing"/"paused"/"idle"/…
     homepods_configured: bool = False
     denon_configured: bool = False
-    denon_active: bool = False                # Plug-Active (denon_audio_path)
+    denon_active: bool = False                # Denon Master / player-active fallback
     denon_source: Optional[str] = None        # Denon-Player source-Attribut
     bio_state: Optional[str] = None
     bio_sleep: bool = False

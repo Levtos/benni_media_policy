@@ -63,12 +63,12 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate retired entity IDs from earlier prefills."""
     changed, data, options = _migrated_entry_sources(entry)
 
-    if changed or entry.version < 3:
+    if changed or entry.version < 4:
         hass.config_entries.async_update_entry(
             entry,
             data=data,
             options=options,
-            version=3,
+            version=4,
         )
         _LOGGER.info("Migrated benni_media_policy entity bindings")
     return True

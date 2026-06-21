@@ -165,7 +165,7 @@ CONF_QUIET_MODE: Final[str] = "quiet_mode_entity"
 # Eigene Policy-Inputs (Roh-/Template-Entitäten — core_devices-Atomics später).
 CONF_HOMEPODS: Final[str] = "homepods_player_entity"   # MA-Gruppe (1 Player)
 CONF_DENON: Final[str] = "denon_player_entity"
-CONF_DENON_ACTIVE: Final[str] = "denon_active_entity"  # Plug-Active (denon_audio_path)
+CONF_DENON_ACTIVE: Final[str] = "denon_active_entity"  # Core-Devices Denon Master
 CONF_SUBWOOFER: Final[str] = "subwoofer_entity"        # nur Target (Apply-Layer)
 CONF_BIO_STATE: Final[str] = "bio_state_entity"
 CONF_DAY_STATE: Final[str] = "day_state_entity"
@@ -195,8 +195,8 @@ ENTITY_SLOT_KEYS: Final[tuple[str, ...]] = WATCH_KEYS + (CONF_SUBWOOFER,)
 
 # --------------------------------------------------------------------------- #
 # Profil-Map (Auto-Bind). benni: media_state-Entities (Konsum-Vertrag) + Live-IDs
-# der Einhornzentrale (aus produktivem Toolbox-Entry übernommen). Roh-/Template-
-# Entitäten — core_devices-Atomics-Migration ist ein separater späterer Step.
+# der Einhornzentrale. Direkte Player bleiben für Player-Attribute/Targets;
+# aktive Geräte-Wahrheiten kommen aus Core-Devices-Mastern.
 # eltern leer (Anlage existiert noch nicht). Existenz-Filter regelt Fehlendes.
 # --------------------------------------------------------------------------- #
 PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
@@ -211,7 +211,7 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         # eigene Geräte/Inputs:
         CONF_HOMEPODS: "media_player.living_homepods_ma_group",
         CONF_DENON: "media_player.living_denon",
-        CONF_DENON_ACTIVE: "sensor.benni_device_living_avr",
+        CONF_DENON_ACTIVE: "sensor.benni_master_denon",
         CONF_BIO_STATE: "sensor.benni_core_state_bio_state",
         CONF_DAY_STATE: "sensor.benni_combined_context_day_state",
         CONF_ACTIVITY_STATE: "sensor.benni_core_state_activity_state",
@@ -230,7 +230,8 @@ LEGACY_ENTITY_MAP: Final[dict[str, str]] = {
     "sensor.benni_combined_opening_any_open": CORE_OPENINGS_MASTER_ENTITY,
     "sensor.benni_combined_opening_any_open_or_tilted": CORE_OPENINGS_MASTER_ENTITY,
     # FLEET-64-retirete Atomics/Combineds → core_devices (Diagnostics-Fund).
-    "binary_sensor.living_denon_plug_power_active_atomic": "sensor.benni_device_living_avr",
+    "binary_sensor.living_denon_plug_power_active_atomic": "sensor.benni_master_denon",
+    "sensor.benni_device_living_avr": "sensor.benni_master_denon",
     "binary_sensor.opening_any_open_combined": CORE_OPENINGS_MASTER_ENTITY,
 }
 

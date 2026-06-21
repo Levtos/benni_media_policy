@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 - Master ReBind
+
+- Repointed the Benni Denon active-source default from
+  `sensor.benni_device_living_avr` to `sensor.benni_master_denon`.
+- Migrates saved Denon active-source bindings from the retired Atomic/Device
+  IDs to the Denon master during setup and ConfigEntry migration.
+- Normalizes legacy entity IDs in the options flow so old Denon IDs do not stay
+  stored as manual overrides.
+
 ## 0.8.2 - FLEET-94
 
 - Force existing ConfigEntry source migrations for the openings master on setup and via config entry version 3.
