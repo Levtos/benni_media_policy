@@ -42,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("Migrated benni_media_policy entity bindings during setup")
 
     coord = MediaPolicyCoordinator(hass, entry)
+    await coord.async_load_matrix()  # FLEET-102 Stage B: Volume-Matrix-Override laden
     await coord.async_config_entry_first_refresh()
     coord.async_start()
 

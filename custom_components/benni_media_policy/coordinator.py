@@ -27,7 +27,9 @@ from homeassistant.util import dt as dt_util
 
 from . import logic
 from .const import (
+    AUDIO_SCENARIO_LABELS,
     BIO_SLEEP_VALUES,
+    BOOST_BLOCK_ACTIVITIES,
     CONF_ACTIVITY_STATE,
     CONF_APPLY_ENABLED,
     CONF_BIO_STATE,
@@ -59,9 +61,12 @@ from .const import (
     CONF_GRIND_DENON_OFFSET,
     CORE_OPENINGS_MASTER_ENTITY,
     CORE_OPENINGS_MEDIA_ATTRIBUTE,
+    DAY_PHASES,
     DEFAULT_APPLY_ENABLED,
     DEFAULT_PROFILE,
+    DENON_BASELINES,
     DOMAIN,
+    HOMEPODS_BASELINES,
     MUSIC_ENUM_BOOST,
     NUDGE_MAX,
     NUDGE_MIN,
@@ -70,6 +75,7 @@ from .const import (
     VOL_SETTING_DEFAULTS,
     WATCH_KEYS,
 )
+from .storage import make_matrix_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,6 +116,9 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._manual_nudge: float = 0.0
         self._boost_suppressed: bool = False
         self._boost_suppress_track: str | None = None  # Track, für den R22 gilt
+        # FLEET-102 Stage B: persistenter Volume-Matrix-Override (Store).
+        self._matrix_store = make_matrix_store(hass, entry.entry_id)
+        self._matrix_override: dict[str, Any] = {}
 
     # ----- profile / binding -----
     @property
@@ -146,13 +155,27 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {key: self._entity_id(key) for key in WATCH_KEYS}
 
     def settings(self) -> logic.VolumeSettings:
-        """VolumeSettings aus den Options (Default je Key bei fehlend/ungültig)."""
+        """VolumeSettings (= Volume-Matrix): Skalare aus den Options, Tabellen
+        (base/scenario/activity) aus dem persistenten Store-Override über die
+        Defaults gemerged (Stage B)."""
         def _f(key: str) -> float:
             raw = self._opts.get(key, VOL_SETTING_DEFAULTS[key])
             try:
                 return float(raw)
             except (TypeError, ValueError):
                 return VOL_SETTING_DEFAULTS[key]
+
+        ov = self._matrix_override or {}
+        def _tbl(dim: str, device: str, default: dict) -> dict:
+            sub = (ov.get(dim) or {}).get(device) or {}
+            merged = dict(default)
+            for k, v in sub.items():
+                try:
+                    merged[k] = round(float(v), 3)
+                except (TypeError, ValueError):
+                    continue
+            return merged
+
         return logic.VolumeSettings(
             homepods_base=_f(CONF_VOL_HOMEPODS_BASE),
             denon_base=_f(CONF_VOL_DENON_BASE),
@@ -163,16 +186,28 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             opening_offset=_f(CONF_VOL_OPENING_OFFSET),
             boost_offset=_f(CONF_VOL_BOOST_OFFSET),
             grind_denon_offset=_f(CONF_GRIND_DENON_OFFSET),
+            base_homepods=_tbl("base", "homepods", HOMEPODS_BASELINES),
+            base_denon=_tbl("base", "denon", DENON_BASELINES),
+            scenario_off_homepods=_tbl("scenario_off", "homepods", {}),
+            scenario_off_denon=_tbl("scenario_off", "denon", {}),
+            activity_off_homepods=_tbl("activity_off", "homepods", {}),
+            activity_off_denon=_tbl("activity_off", "denon", {}),
         )
 
     def matrix(self) -> dict[str, Any]:
-        """FLEET-102 (Stage A): read-only Snapshot der effektiven Volume-Matrix.
-        Quelle = settings() (Config-Skalare + Default-Tabellen). Editor/Persistenz
-        (Store + Schreibpfad) folgen in Stage B; scenario_off/activity_off sind
-        bis Stage C leer (→ 0.0, verhaltensgleich)."""
+        """FLEET-102: effektive Volume-Matrix + Kataloge + persistenter Override.
+        Quelle = settings() (Config-Skalare + Default-Tabellen ⊕ Store-Override).
+        `catalog` listet die editierbaren Zeilen (Tagesphasen/Szenarien/Aktivitäten);
+        Aktivitäten sind offen-keyed (Enum lebt in core_state) — bekannte als Start."""
         s = self.settings()
         return {
-            "dayphases": list(s.base_homepods.keys()),
+            "catalog": {
+                "dayphases": list(DAY_PHASES),
+                "scenarios": list(AUDIO_SCENARIO_LABELS.keys()),
+                "scenario_labels": dict(AUDIO_SCENARIO_LABELS),
+                "activities": list(BOOST_BLOCK_ACTIVITIES),
+                "devices": ["homepods", "denon"],
+            },
             "base": {"homepods": dict(s.base_homepods), "denon": dict(s.base_denon)},
             "scenario_off": {
                 "homepods": dict(s.scenario_off_homepods),
@@ -190,7 +225,36 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "opening_offset": s.opening_offset, "boost_offset": s.boost_offset,
                 "grind_denon_offset": s.grind_denon_offset,
             },
+            "override": self._matrix_override or {},
         }
+
+    # ----- FLEET-102 Stage B: Matrix-Persistenz (Store) -----
+    async def async_load_matrix(self) -> None:
+        """Override aus dem Store laden (Setup). Fehlt/kaputt → {} (= Defaults)."""
+        try:
+            stored = await self._matrix_store.async_load()
+        except Exception:  # noqa: BLE001 — fail-safe auf Defaults
+            stored = None
+        self._matrix_override = stored if isinstance(stored, dict) else {}
+
+    async def async_set_matrix(self, patch: dict[str, Any]) -> dict[str, Any]:
+        """Partiellen Matrix-Override mergen, persistieren, neu rechnen. Nur die
+        Tabellen-Dimensionen (base/scenario_off/activity_off) × Gerät; Werte als
+        float geclamped auf [0,1] (base) bzw. [-1,1] (offsets). Gibt die neue
+        effektive Matrix zurück. Merge/Clamp = pure logic.apply_matrix_patch."""
+        self._matrix_override = logic.apply_matrix_patch(
+            self._matrix_override or {}, patch if isinstance(patch, dict) else {}
+        )
+        await self._matrix_store.async_save(self._matrix_override)
+        self.async_set_updated_data(self._compute())
+        return self.matrix()
+
+    async def async_reset_matrix(self) -> dict[str, Any]:
+        """Kompletten Override verwerfen → zurück auf Code-Defaults."""
+        self._matrix_override = {}
+        await self._matrix_store.async_save({})
+        self.async_set_updated_data(self._compute())
+        return self.matrix()
 
     # ----- lifecycle -----
     @callback

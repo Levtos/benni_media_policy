@@ -191,6 +191,40 @@ def test_matrix_activity_offset_applies():
     assert d.volume_target_homepods == 0.30  # 0.35 - 0.05
 
 
+def test_matrix_patch_sets_and_clamps():
+    ov = L.apply_matrix_patch({}, {"base": {"homepods": {"afternoon": 0.50}}})
+    assert ov == {"base": {"homepods": {"afternoon": 0.50}}}
+    # base clamp [0,1], offsets clamp [-1,1].
+    ov = L.apply_matrix_patch(ov, {
+        "base": {"homepods": {"forenoon": 2.0}},
+        "scenario_off": {"denon": {"music": -5.0}},
+    })
+    assert ov["base"]["homepods"]["forenoon"] == 1.0
+    assert ov["scenario_off"]["denon"]["music"] == -1.0
+    # Bestehender Wert bleibt (Merge, kein Replace).
+    assert ov["base"]["homepods"]["afternoon"] == 0.50
+
+
+def test_matrix_patch_none_deletes_cell_and_prunes():
+    ov = L.apply_matrix_patch({}, {"base": {"homepods": {"afternoon": 0.50}}})
+    ov = L.apply_matrix_patch(ov, {"base": {"homepods": {"afternoon": None}}})
+    assert ov == {}  # leere Maps werden geprunt → kein Müll im Store
+
+
+def test_matrix_patch_ignores_garbage():
+    ov = L.apply_matrix_patch(
+        {}, {"base": {"homepods": {"afternoon": "laut", "forenoon": 0.4}},
+             "bogus_dim": {"x": 1}, "scenario_off": "nope"}
+    )
+    assert ov == {"base": {"homepods": {"forenoon": 0.4}}}  # nur valide Zelle bleibt
+
+
+def test_matrix_patch_does_not_mutate_input():
+    src = {"base": {"homepods": {"afternoon": 0.50}}}
+    L.apply_matrix_patch(src, {"base": {"homepods": {"afternoon": 0.20}}})
+    assert src["base"]["homepods"]["afternoon"] == 0.50  # Eingabe unverändert
+
+
 def test_volume_idle_sticky_resume_no_change():
     # Stick auf 0.35, dann Resume auf identischem Pfad → gleiches Target, kein Ramp.
     _d1, s1 = _decide(_inp(homepods_state="playing"))

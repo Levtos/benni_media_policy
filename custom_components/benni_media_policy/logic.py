@@ -572,6 +572,59 @@ def volume_breakdown(
     }
 
 
+# --------------------------------------------------------------------------- #
+# FLEET-102 Stage B — Volume-Matrix-Override-Merge (HA-frei, testbar)
+# --------------------------------------------------------------------------- #
+MATRIX_DIMS: tuple[str, ...] = ("base", "scenario_off", "activity_off")
+MATRIX_DEVICES: tuple[str, ...] = ("homepods", "denon")
+
+
+def apply_matrix_patch(
+    override: dict[str, Any], patch: dict[str, Any]
+) -> dict[str, Any]:
+    """Partiellen Patch in den persistenten Matrix-Override mergen (pure).
+
+    - Dimensionen: base/scenario_off/activity_off × {homepods,denon}.
+    - Werte: float, geclamped (base ∈ [0,1], Offsets ∈ [-1,1]), rund auf 3.
+    - ``None`` als Zellwert löscht den Override dieser Zelle (zurück auf Default).
+    - Leere Geräte-/Dimensions-Maps werden entfernt (kein Müll im Store).
+    - Unbekannte/ungültige Einträge werden still ignoriert (fail-safe).
+    Gibt einen NEUEN Override zurück (Eingabe unverändert)."""
+    ov: dict[str, Any] = {
+        dim: {dev: dict(cells) for dev, cells in (override.get(dim) or {}).items()}
+        for dim in MATRIX_DIMS
+        if override.get(dim)
+    }
+    for dim in MATRIX_DIMS:
+        pd = patch.get(dim)
+        if not isinstance(pd, dict):
+            continue
+        lo, hi = (0.0, 1.0) if dim == "base" else (-1.0, 1.0)
+        dim_ov = ov.get(dim, {})
+        for device in MATRIX_DEVICES:
+            cells = pd.get(device)
+            if not isinstance(cells, dict):
+                continue
+            dev_ov = dict(dim_ov.get(device) or {})
+            for key, val in cells.items():
+                if val is None:
+                    dev_ov.pop(str(key), None)
+                    continue
+                try:
+                    dev_ov[str(key)] = round(max(lo, min(hi, float(val))), 3)
+                except (TypeError, ValueError):
+                    continue
+            if dev_ov:
+                dim_ov[device] = dev_ov
+            else:
+                dim_ov.pop(device, None)
+        if dim_ov:
+            ov[dim] = dim_ov
+        else:
+            ov.pop(dim, None)
+    return ov
+
+
 _REASON_BLOCKED_KW = (
     "block", "mute", "no_", "stop", "sleep", "window", "dayphase",
     "before_0900", "competing", "missing",
