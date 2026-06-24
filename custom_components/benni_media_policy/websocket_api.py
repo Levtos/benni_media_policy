@@ -15,6 +15,7 @@ from .const import (
     DATA_COORDINATOR,
     DOMAIN,
     PROFILE_LABELS,
+    WS_GET_MATRIX,
     WS_GET_STATUS,
     WS_NUDGE_VOLUME,
     WS_RESET_BOOST,
@@ -50,6 +51,15 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
             connection.send_error(msg["id"], "not_ready", "Media Policy not loaded")
             return
         connection.send_result(msg["id"], _status(coord))
+
+    @websocket_api.websocket_command({vol.Required("type"): WS_GET_MATRIX})
+    @websocket_api.async_response
+    async def ws_get_matrix(hass, connection, msg) -> None:
+        coord = _coordinator(hass)
+        if coord is None:
+            connection.send_error(msg["id"], "not_ready", "Media Policy not loaded")
+            return
+        connection.send_result(msg["id"], coord.matrix())
 
     @websocket_api.websocket_command(
         {
@@ -87,6 +97,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
         connection.send_result(msg["id"], {"boost_suppressed": True})
 
     websocket_api.async_register_command(hass, ws_get_status)
+    websocket_api.async_register_command(hass, ws_get_matrix)
     websocket_api.async_register_command(hass, ws_nudge_volume)
     websocket_api.async_register_command(hass, ws_reset_nudge)
     websocket_api.async_register_command(hass, ws_reset_boost)

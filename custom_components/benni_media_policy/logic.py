@@ -146,6 +146,16 @@ class VolumeSettings:
     opening_offset: float = DEFAULT_VOL_OPENING_OFFSET   # R17 fenster_offset
     boost_offset: float = DEFAULT_VOL_BOOST_OFFSET       # R18 Track-Boost
     grind_denon_offset: float = DEFAULT_GRIND_DENON_OFFSET  # R17 szenario_offset (Grind)
+    # FLEET-102 Volume-Matrix (Stage A): tabellarische Summanden, data-driven.
+    # Base = per-Tagesphase (Lastenheft §6). scenario_off/activity_off seeded leer
+    # → Lookup .get(key, 0.0) = 0.0 ⇒ verhaltensgleich, bis Stage C sie füllt.
+    # Pro Gerät getrennt (HomePods/Denon), wie die Baselines.
+    base_homepods: dict = field(default_factory=lambda: dict(HOMEPODS_BASELINES))
+    base_denon: dict = field(default_factory=lambda: dict(DENON_BASELINES))
+    scenario_off_homepods: dict = field(default_factory=dict)
+    scenario_off_denon: dict = field(default_factory=dict)
+    activity_off_homepods: dict = field(default_factory=dict)
+    activity_off_denon: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -416,7 +426,8 @@ def music_muted(inp: Inputs) -> bool:
 
 
 def decide_volume(
-    inp: Inputs, owner: str, grind: bool, s: VolumeSettings
+    inp: Inputs, owner: str, grind: bool, s: VolumeSettings,
+    scenario: Optional[str] = None,
 ) -> tuple[str, Optional[float], Optional[float], bool, str, bool, bool]:
     """R17-Volume-Modell v3.1. Return
     (policy, homepods_target, denon_target, apply_allowed, reason,
@@ -472,8 +483,10 @@ def decide_volume(
             hp = 0.0   # R19: Mute übersteuert die berechnete Ziel-Lautstärke.
         else:
             hp = _assemble(
-                _baseline(inp.day_state, HOMEPODS_BASELINES, s.homepods_base),
-                szenario_off=0.0, fenster_off=fenster, kontext_off=0.0,
+                _baseline(inp.day_state, s.base_homepods, s.homepods_base),
+                szenario_off=s.scenario_off_homepods.get(scenario, 0.0),
+                fenster_off=fenster,
+                kontext_off=s.activity_off_homepods.get(inp.activity_context, 0.0),
                 manual_off=inp.manual_nudge,
                 boost=s.boost_offset if boost_flag else 0.0,
                 active_min=s.active_min, hard_max=s.homepods_max,
@@ -484,9 +497,12 @@ def decide_volume(
         else:
             # GRIND: Denon als Hintergrund-Kulisse via szenario_offset (R16/§6).
             dn = _assemble(
-                _baseline(inp.day_state, DENON_BASELINES, s.denon_base),
-                szenario_off=(s.grind_denon_offset if grind else 0.0),
-                fenster_off=fenster, kontext_off=0.0, manual_off=inp.manual_nudge,
+                _baseline(inp.day_state, s.base_denon, s.denon_base),
+                szenario_off=(s.grind_denon_offset if grind else 0.0)
+                + s.scenario_off_denon.get(scenario, 0.0),
+                fenster_off=fenster,
+                kontext_off=s.activity_off_denon.get(inp.activity_context, 0.0),
+                manual_off=inp.manual_nudge,
                 boost=0.0,
                 active_min=s.active_min, hard_max=s.denon_max,
             )
@@ -505,7 +521,8 @@ def decide_volume(
 # decide_volume über dieselben Helfer (_baseline/_assemble/boost_active) → kein Drift.
 # --------------------------------------------------------------------------- #
 def volume_breakdown(
-    inp: Inputs, owner: str, grind: bool, s: VolumeSettings
+    inp: Inputs, owner: str, grind: bool, s: VolumeSettings,
+    scenario: Optional[str] = None,
 ) -> dict[str, Any]:
     """R17-Komponenten je Gerät (base · scenario · window · activity · nudge ·
     boost → result). Nur im MEDIA-Zweig voll aussagekräftig; sonst result=0/—."""
@@ -523,28 +540,34 @@ def volume_breakdown(
     boost_flag = hp_plays and boost_active(inp)
 
     nudge = inp.manual_nudge
-    def comp(base: float, szen: float, plays: bool, hard_max: float, boost: float) -> dict[str, Any]:
+    def comp(base: float, szen: float, act: float, plays: bool, hard_max: float, boost: float) -> dict[str, Any]:
         win = fenster if plays else 0.0
         man = nudge if plays else 0.0
+        kontext = act if plays else 0.0
         result = _assemble(
-            base, szenario_off=szen, fenster_off=win, kontext_off=0.0,
+            base, szenario_off=szen, fenster_off=win, kontext_off=kontext,
             manual_off=man, boost=boost, active_min=s.active_min, hard_max=hard_max,
         ) if plays else 0.0
         return {
             "base": round(base, 3), "scenario_offset": round(szen, 3),
-            "window_offset": round(win, 3), "activity_offset": 0.0,
+            "window_offset": round(win, 3), "activity_offset": round(kontext, 3),
             "manual_nudge": round(man, 3), "track_boost": round(boost, 3),
             "result": result, "plays": plays,
         }
 
     return {
         "homepods": comp(
-            _baseline(inp.day_state, HOMEPODS_BASELINES, s.homepods_base),
-            0.0, hp_plays, s.homepods_max, s.boost_offset if boost_flag else 0.0,
+            _baseline(inp.day_state, s.base_homepods, s.homepods_base),
+            s.scenario_off_homepods.get(scenario, 0.0),
+            s.activity_off_homepods.get(inp.activity_context, 0.0),
+            hp_plays, s.homepods_max, s.boost_offset if boost_flag else 0.0,
         ),
         "denon": comp(
-            _baseline(inp.day_state, DENON_BASELINES, s.denon_base),
-            (s.grind_denon_offset if grind else 0.0), dn_plays, s.denon_max, 0.0,
+            _baseline(inp.day_state, s.base_denon, s.denon_base),
+            (s.grind_denon_offset if grind else 0.0)
+            + s.scenario_off_denon.get(scenario, 0.0),
+            s.activity_off_denon.get(inp.activity_context, 0.0),
+            dn_plays, s.denon_max, 0.0,
         ),
     }
 
@@ -661,7 +684,7 @@ def decide(
     reasons.append(f"action:{action_reason}")
 
     policy, hp, dn, apply_allowed, vol_reason, boost_applied, muted = decide_volume(
-        inp, owner, grind, settings
+        inp, owner, grind, settings, scenario
     )
     # ---- FLEET-153: HomePods-Pfad sticky über Idle-Gaps ----
     # Ein transienter owner=none (Playback-Lücke, Track-/Sender-Wechsel) darf das

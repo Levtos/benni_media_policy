@@ -157,6 +157,40 @@ def test_volume_idle_sticky_cleared_on_denon_path():
     assert d3.volume_target_homepods == 0.0
 
 
+# --------------------------------------------------- FLEET-102 Volume-Matrix (A)
+def test_matrix_default_base_tables_match_consts():
+    # Default-Matrix = die bisherigen Konstanten (verhaltensgleich).
+    s = L.VolumeSettings()
+    assert s.base_homepods == C.HOMEPODS_BASELINES
+    assert s.base_denon == C.DENON_BASELINES
+    assert s.scenario_off_homepods == {} and s.activity_off_homepods == {}
+
+
+def test_matrix_custom_base_changes_target():
+    # Per-Tagesphase-Base aus der Matrix steuert das Target (das eigentliche 102).
+    s = L.VolumeSettings(base_homepods={**C.HOMEPODS_BASELINES, "afternoon": 0.50})
+    d, _ = _decide(_inp(homepods_state="playing", day_state="afternoon"), settings=s)
+    assert d.volume_target_homepods == 0.50  # Default wäre 0.45
+
+
+def test_matrix_scenario_offset_applies():
+    # Szenario-Offset (heute tot, 0.0) wird aus der Matrix gezogen und wirkt.
+    s = L.VolumeSettings(scenario_off_homepods={C.AUDIO_SCENARIO_MUSIC: 0.10})
+    d, _ = _decide(_inp(homepods_state="playing"), settings=s)  # Fallback-Base 0.35
+    assert d.volume_target_homepods == 0.45
+    # Nicht-passendes Szenario → kein Offset (.get-Default 0.0).
+    s2 = L.VolumeSettings(scenario_off_homepods={C.AUDIO_SCENARIO_TV: 0.10})
+    d2, _ = _decide(_inp(homepods_state="playing"), settings=s2)
+    assert d2.volume_target_homepods == 0.35
+
+
+def test_matrix_activity_offset_applies():
+    # Aktivitäts-Offset (heute tot, 0.0) wird aus der Matrix gezogen und wirkt.
+    s = L.VolumeSettings(activity_off_homepods={"relax": -0.05})
+    d, _ = _decide(_inp(homepods_state="playing", activity_context="relax"), settings=s)
+    assert d.volume_target_homepods == 0.30  # 0.35 - 0.05
+
+
 def test_volume_idle_sticky_resume_no_change():
     # Stick auf 0.35, dann Resume auf identischem Pfad → gleiches Target, kein Ramp.
     _d1, s1 = _decide(_inp(homepods_state="playing"))

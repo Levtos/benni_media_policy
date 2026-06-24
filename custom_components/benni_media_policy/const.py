@@ -320,6 +320,8 @@ FRONTEND_ENTRY: Final[str] = f"{FRONTEND_DIR_URL}/main.js"
 PANEL_ELEMENT: Final[str] = "bmp-app"
 
 WS_GET_STATUS: Final[str] = f"{DOMAIN}/get_status"
+# FLEET-102 Volume-Matrix: read-only Snapshot der effektiven Matrix (Stage A).
+WS_GET_MATRIX: Final[str] = f"{DOMAIN}/get_matrix"
 # R21/R22 Nudge-Steuerung (Laufzeit, Cockpit-Quick-Actions).
 WS_NUDGE_VOLUME: Final[str] = f"{DOMAIN}/nudge_volume"
 WS_RESET_NUDGE: Final[str] = f"{DOMAIN}/reset_nudge"

@@ -165,6 +165,33 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             grind_denon_offset=_f(CONF_GRIND_DENON_OFFSET),
         )
 
+    def matrix(self) -> dict[str, Any]:
+        """FLEET-102 (Stage A): read-only Snapshot der effektiven Volume-Matrix.
+        Quelle = settings() (Config-Skalare + Default-Tabellen). Editor/Persistenz
+        (Store + Schreibpfad) folgen in Stage B; scenario_off/activity_off sind
+        bis Stage C leer (→ 0.0, verhaltensgleich)."""
+        s = self.settings()
+        return {
+            "dayphases": list(s.base_homepods.keys()),
+            "base": {"homepods": dict(s.base_homepods), "denon": dict(s.base_denon)},
+            "scenario_off": {
+                "homepods": dict(s.scenario_off_homepods),
+                "denon": dict(s.scenario_off_denon),
+            },
+            "activity_off": {
+                "homepods": dict(s.activity_off_homepods),
+                "denon": dict(s.activity_off_denon),
+            },
+            "scalars": {
+                "homepods_base": s.homepods_base, "denon_base": s.denon_base,
+                "ducked_target": s.ducked_target,
+                "homepods_max": s.homepods_max, "denon_max": s.denon_max,
+                "active_min": s.active_min,
+                "opening_offset": s.opening_offset, "boost_offset": s.boost_offset,
+                "grind_denon_offset": s.grind_denon_offset,
+            },
+        }
+
     # ----- lifecycle -----
     @callback
     def async_start(self) -> None:
@@ -284,7 +311,8 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return {}
         inp = self._build_inputs()
         dbg["volume_formula"] = logic.volume_breakdown(
-            inp, dbg.get("audio_owner", "none"), bool(dbg.get("is_grind", False)), self.settings()
+            inp, dbg.get("audio_owner", "none"), bool(dbg.get("is_grind", False)),
+            self.settings(), dbg.get("audio_scenario"),
         )
         dbg["reasons"] = logic.structured_reasons(dbg)
         dbg["bindings"] = self.bindings()
