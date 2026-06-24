@@ -127,6 +127,10 @@ class OrchestratorState:
     last_competes: bool = False
     last_planned_radio_active: bool = False
     last_manual_playback_active: bool = False
+    # FLEET-153: letztes HomePods-MEDIA-Target, gehalten über Idle-Gaps (sticky),
+    # solange HomePods der zuletzt spielende Pfad war. None = kein Stick (noch nie
+    # gespielt ODER Pfad ist von HomePods weg, z.B. Denon/TV).
+    last_hp_media_target: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -291,6 +295,7 @@ def decide_action(
         last_competes=state.last_competes,
         last_planned_radio_active=state.last_planned_radio_active,
         last_manual_playback_active=state.last_manual_playback_active,
+        last_hp_media_target=state.last_hp_media_target,
     )
     homepods_playing = inp.homepods_state == "playing"
     homepods_missing = not inp.homepods_configured
@@ -658,6 +663,26 @@ def decide(
     policy, hp, dn, apply_allowed, vol_reason, boost_applied, muted = decide_volume(
         inp, owner, grind, settings
     )
+    # ---- FLEET-153: HomePods-Pfad sticky über Idle-Gaps ----
+    # Ein transienter owner=none (Playback-Lücke, Track-/Sender-Wechsel) darf das
+    # HomePods-Target NICHT auf 0.0 kollabieren — sonst rampt der Apply-Layer ohne
+    # Nudge-Änderung runter und wieder hoch (Fade-Down/Ramp-Up, FLEET-153). Wir
+    # halten das letzte MEDIA-Target, solange HomePods der zuletzt spielende Pfad
+    # war; echter Pfadwechsel (→Denon/TV/Gaming) löscht den Stick. Quiet/Ducking
+    # bleibt eigener Zweig (hart 0.10, unberührt). Idle ist Geräte-Sache
+    # (pause/resume via action), nicht Volume → kein Ramp-Down (OQ-1).
+    hp_on_path = pc_gaming or grind or owner == AUDIO_OWNER_HOMEPODS
+    if policy == VOL_POLICY_MEDIA and hp_on_path and hp is not None:
+        new_state.last_hp_media_target = hp
+    elif policy == VOL_POLICY_MEDIA and not hp_on_path:
+        new_state.last_hp_media_target = None
+    if (
+        policy == VOL_POLICY_IDLE
+        and inp.homepods_configured
+        and new_state.last_hp_media_target is not None
+    ):
+        hp = new_state.last_hp_media_target
+        vol_reason = "idle_sticky_homepods"
     d.volume_policy = policy
     d.volume_target_homepods = hp
     d.volume_target_denon = dn

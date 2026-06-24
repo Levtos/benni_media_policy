@@ -120,10 +120,50 @@ def test_volume_ducked_quiet():
 
 
 def test_volume_idle_zeros():
-    d, _ = _decide(_inp())
+    d, s = _decide(_inp())
     assert d.volume_policy == C.VOL_POLICY_IDLE
     assert d.volume_target_homepods == 0.0
     assert d.volume_target_denon == 0.0
+    # Frisches Idle ohne Vorlauf → kein Stick.
+    assert s.last_hp_media_target is None
+
+
+# ------------------------------------------------ FLEET-153: HomePods-Idle-Sticky
+def test_volume_idle_sticky_holds_last_homepods_media():
+    # Tick 1: HomePods spielen → MEDIA-Target 0.35, Stick gesetzt.
+    d1, s1 = _decide(_inp(homepods_state="playing"))
+    assert d1.volume_policy == C.VOL_POLICY_MEDIA
+    assert d1.volume_target_homepods == 0.35
+    assert s1.last_hp_media_target == 0.35
+    # Tick 2: Playback-Lücke (owner none) → Target bleibt sticky statt 0.0 zu
+    # kollabieren → Apply rampt nicht runter/hoch (FLEET-153).
+    d2, s2 = _decide(_inp(), state=s1)
+    assert d2.volume_policy == C.VOL_POLICY_IDLE
+    assert d2.volume_target_homepods == 0.35
+    assert d2.volume_reason == "idle_sticky_homepods"
+    assert s2.last_hp_media_target == 0.35
+
+
+def test_volume_idle_sticky_cleared_on_denon_path():
+    # HomePods spielen → Stick 0.35.
+    _d1, s1 = _decide(_inp(homepods_state="playing"))
+    assert s1.last_hp_media_target == 0.35
+    # Echter Pfadwechsel auf Denon/TV → Stick gelöscht (HomePods verlassen den Pfad).
+    _d2, s2 = _decide(_inp(context=C.CTX_TV), state=s1)
+    assert s2.last_hp_media_target is None
+    # Folgendes Idle → HomePods 0.0 (nicht ihr Pfad), kein Schein-Stick.
+    d3, _s3 = _decide(_inp(), state=s2)
+    assert d3.volume_policy == C.VOL_POLICY_IDLE
+    assert d3.volume_target_homepods == 0.0
+
+
+def test_volume_idle_sticky_resume_no_change():
+    # Stick auf 0.35, dann Resume auf identischem Pfad → gleiches Target, kein Ramp.
+    _d1, s1 = _decide(_inp(homepods_state="playing"))
+    _d2, s2 = _decide(_inp(), state=s1)                       # sticky idle 0.35
+    d3, _s3 = _decide(_inp(homepods_state="playing"), state=s2)
+    assert d3.volume_policy == C.VOL_POLICY_MEDIA
+    assert d3.volume_target_homepods == 0.35  # unverändert → Apply-No-op
 
 
 # ------------------------------------------------------ GRIND Pflicht-Delta
