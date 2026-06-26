@@ -112,6 +112,7 @@ class Inputs:
     planned_radio_active: bool = False
     radio_station: Optional[str] = None        # gewählter Sender (audio_scenario-Detail)
     media_stop_latch: Optional[bool] = None   # None = nicht konfiguriert
+    wake_needed: Optional[bool] = None         # wake_planner Wach-Flanke → manual_stop-Reset
     manual_nudge: float = 0.0                  # R21 ±0.10-Nudge (Laufzeit, Cockpit)
     boost_suppressed: bool = False             # R22 Boost-Reset (Track-Boost aus)
 
@@ -127,6 +128,7 @@ class OrchestratorState:
     last_competes: bool = False
     last_planned_radio_active: bool = False
     last_manual_playback_active: bool = False
+    last_wake_needed: bool = False   # Wach-Flanken-Erkennung (wake_planner)
     # FLEET-153: letztes HomePods-MEDIA-Target, gehalten über Idle-Gaps (sticky),
     # solange HomePods der zuletzt spielende Pfad war. None = kein Stick (noch nie
     # gespielt ODER Pfad ist von HomePods weg, z.B. Denon/TV).
@@ -185,6 +187,7 @@ class PolicyDecision:
     is_pc_gaming: bool = False
     track_boost_applied: bool = False
     music_muted: bool = False
+    manual_stop: bool = False   # Stop hält bis zum nächsten Wecken (wake_planner)
     active_reasons: list = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -201,6 +204,7 @@ class PolicyDecision:
             "homepods_should_pause": self.homepods_should_pause,
             "homepods_resume_allowed": self.homepods_resume_allowed,
             "volume_apply_allowed": self.volume_apply_allowed,
+            "manual_stop": self.manual_stop,
         }
 
     def debug(self) -> dict[str, Any]:
@@ -305,6 +309,7 @@ def decide_action(
         last_competes=state.last_competes,
         last_planned_radio_active=state.last_planned_radio_active,
         last_manual_playback_active=state.last_manual_playback_active,
+        last_wake_needed=state.last_wake_needed,
         last_hp_media_target=state.last_hp_media_target,
     )
     homepods_playing = inp.homepods_state == "playing"
@@ -336,6 +341,12 @@ def decide_action(
     if inp.media_stop_latch is True:
         new_state.manual_stop = True
     elif inp.media_stop_latch is False and not state.last_homepods_playing:
+        new_state.manual_stop = False
+
+    # Wach-Flanke (wake_planner): das geplante Wecken räumt den Manual-Stop ab →
+    # Morgen-Radio/Resume wieder frei. Nativer Ersatz der YAML-Automation
+    # „clear stop latch on wake" — gewinnt auch über einen noch stehenden Latch.
+    if inp.wake_needed is True and not state.last_wake_needed:
         new_state.manual_stop = False
 
     # ---- Action / reason ----
@@ -378,6 +389,7 @@ def decide_action(
     new_state.last_competes = competes
     new_state.last_planned_radio_active = inp.planned_radio_active
     new_state.last_manual_playback_active = inp.manual_playback_active
+    new_state.last_wake_needed = inp.wake_needed is True
 
     return action, should_pause, resume_allowed, reason, new_state
 
@@ -734,6 +746,7 @@ def decide(
     d.homepods_should_pause = should_pause
     d.homepods_resume_allowed = resume_allowed
     d.action_reason = action_reason
+    d.manual_stop = new_state.manual_stop
     reasons.append(f"action:{action_reason}")
 
     policy, hp, dn, apply_allowed, vol_reason, boost_applied, muted = decide_volume(

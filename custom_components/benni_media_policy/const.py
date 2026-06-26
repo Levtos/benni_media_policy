@@ -178,6 +178,7 @@ CONF_MANUAL_PLAYBACK: Final[str] = "manual_playback_entity"
 CONF_PLANNED_RADIO: Final[str] = "planned_radio_entity"
 CONF_MEDIA_STOP_LATCH: Final[str] = "media_stop_latch_entity"
 CONF_RADIO_STATION: Final[str] = "radio_station_entity"  # input_select Sender → audio_scenario-Detail (FLEET-85)
+CONF_WAKE_NEEDED: Final[str] = "wake_needed_entity"  # wake_planner Wach-Flanke → manual_stop-Reset
 
 # Keys, deren gebundene Entities der Coordinator beobachtet (event-driven).
 WATCH_KEYS: Final[tuple[str, ...]] = (
@@ -187,7 +188,7 @@ WATCH_KEYS: Final[tuple[str, ...]] = (
     CONF_BIO_STATE, CONF_DAY_STATE, CONF_ACTIVITY_STATE, CONF_OPENING,
     CONF_HOMEPODS_MUSIC_ENUM,
     CONF_MANUAL_PLAYBACK, CONF_PLANNED_RADIO, CONF_MEDIA_STOP_LATCH,
-    CONF_RADIO_STATION,
+    CONF_RADIO_STATION, CONF_WAKE_NEEDED,
 )
 
 # Subwoofer ist nur ein Apply-Target (kein beobachteter Input).
@@ -220,6 +221,7 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_MANUAL_PLAYBACK: "binary_sensor.media_manual_playback_active",
         CONF_PLANNED_RADIO: "binary_sensor.media_radio_playing_planned_station",
         CONF_RADIO_STATION: "input_select.media_radio_station",
+        CONF_WAKE_NEEDED: "binary_sensor.wake_planner_benni_wake_needed",
     },
     PROFILE_ELTERN: {},
 }
@@ -293,6 +295,7 @@ DEFAULT_DATA: Final[dict[str, Any]] = {
     "homepods_should_pause": False,
     "homepods_resume_allowed": False,
     "volume_apply_allowed": False,
+    "manual_stop": False,
 }
 
 # --------------------------------------------------------------------------- #
@@ -308,6 +311,7 @@ UID_SUBWOOFER_ALLOWED: Final[str] = "subwoofer_allowed"
 UID_HOMEPODS_SHOULD_PAUSE: Final[str] = "homepods_should_pause"
 UID_HOMEPODS_RESUME_ALLOWED: Final[str] = "homepods_resume_allowed"
 UID_VOLUME_APPLY_ALLOWED: Final[str] = "volume_apply_allowed"
+UID_MANUAL_STOP: Final[str] = "manual_stop"
 
 # --------------------------------------------------------------------------- #
 # Panel / WebSocket-API (Vanilla, kein Build-Step).

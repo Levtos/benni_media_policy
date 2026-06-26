@@ -361,6 +361,31 @@ def test_media_stop_latch_forces_manual_stop():
     assert s.manual_stop is True
 
 
+# ------------------------------------------------ Wake-Reset (wake_planner)
+def test_wake_needed_clears_manual_stop():
+    # Tick 1: HomePods spielen → Tick 2: User stoppt selbst → manual_stop.
+    _d1, s1 = _decide(_inp(homepods_state="playing"))
+    d2, s2 = _decide(_inp(homepods_state="idle"), state=s1)
+    assert s2.manual_stop is True and d2.manual_stop is True
+    # Tick 3: Wach-Flanke → manual_stop wieder frei (nativer Ersatz der YAML-Automation).
+    d3, s3 = _decide(_inp(homepods_state="idle", wake_needed=True), state=s2)
+    assert s3.manual_stop is False and d3.manual_stop is False
+
+
+def test_wake_needed_only_clears_on_rising_edge():
+    # wake_needed dauerhaft on (kein Edge): ein frischer Stop bleibt manual_stop.
+    _d0, s0 = _decide(_inp(homepods_state="playing", wake_needed=True))
+    _d1, s1 = _decide(_inp(homepods_state="playing", wake_needed=True), state=s0)
+    d2, _s2 = _decide(_inp(homepods_state="idle", wake_needed=True), state=s1)
+    assert d2.manual_stop is True  # kein Edge → kein Clear
+
+
+def test_manual_stop_exposed_in_decision_dict():
+    _d1, s1 = _decide(_inp(homepods_state="playing"))
+    d2, _ = _decide(_inp(homepods_state="idle"), state=s1)
+    assert d2.as_dict()["manual_stop"] is True
+
+
 def test_homepods_missing_blocks_action():
     d, _ = _decide(_inp(homepods_configured=False, denon_configured=True,
                         context=C.CTX_TV))

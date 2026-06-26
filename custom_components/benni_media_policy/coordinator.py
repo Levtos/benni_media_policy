@@ -50,6 +50,7 @@ from .const import (
     CONF_PROFILE,
     CONF_QUIET_MODE,
     CONF_RADIO_STATION,
+    CONF_WAKE_NEEDED,
     CONF_VOL_ACTIVE_MIN,
     CONF_VOL_BOOST_OFFSET,
     CONF_VOL_DENON_BASE,
@@ -342,6 +343,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             planned_radio_active=_bool(self._state(CONF_PLANNED_RADIO)),
             radio_station=self._state(CONF_RADIO_STATION),
             media_stop_latch=_opt_bool(self._state(CONF_MEDIA_STOP_LATCH)),
+            wake_needed=_opt_bool(self._state(CONF_WAKE_NEEDED)),
             manual_nudge=self._manual_nudge,
             boost_suppressed=self._boost_suppressed,
         )

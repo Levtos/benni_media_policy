@@ -22,6 +22,7 @@ from .const import (
     UID_AUDIO_SCENARIO,
     UID_HOMEPODS_RESUME_ALLOWED,
     UID_HOMEPODS_SHOULD_PAUSE,
+    UID_MANUAL_STOP,
     UID_SUBWOOFER_ALLOWED,
     UID_VOLUME_APPLY_ALLOWED,
     UID_VOLUME_POLICY,
@@ -60,6 +61,7 @@ BINARY_SENSORS: tuple[FieldDesc, ...] = (
     FieldDesc("homepods_should_pause", UID_HOMEPODS_SHOULD_PAUSE, "HomePods Should Pause", "mdi:pause-octagon"),
     FieldDesc("homepods_resume_allowed", UID_HOMEPODS_RESUME_ALLOWED, "HomePods Resume Allowed", "mdi:play-circle"),
     FieldDesc("volume_apply_allowed", UID_VOLUME_APPLY_ALLOWED, "Volume Apply Allowed", "mdi:lock-open-check"),
+    FieldDesc("manual_stop", UID_MANUAL_STOP, "Manual Stop", "mdi:stop-circle-outline"),
 )
 
 
