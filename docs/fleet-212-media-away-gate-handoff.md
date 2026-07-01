@@ -14,6 +14,7 @@ Die Away-Gate-Kette wurde released und danach ein Folgefehler in der Musik-Basel
 - `benni_media_apply v0.14.6`: pausiert HomePods, schaltet Denon/Subwoofer aus und blockiert Radio-Restart/Wake bei Away.
 - `benni_media v0.6.2`: UX-Fix, damit die Overview bei realem Idle/Off nicht mehr die Policy-Baseline `Musik · <Sender>` als aktuell laufendes Szenario anzeigt.
 - `benni_media_policy v0.12.2`: eigentlicher Hoerbarkeits-Hotfix. Bei `zuhause`, gewaehltem Radiosender und idle HomePods erzeugt die Policy wieder `action=start_radio` und ein hoerbares HomePods-Target.
+- Follow-up `benni_media_state v0.9.1`: `bei_eltern` ist fuer Media home-equivalent und loest keinen Away-Gate-Cut mehr aus.
 
 ## Warum der zweite Hotfix noetig war
 
@@ -79,6 +80,13 @@ audio_scenario_detail=gayfm
   - Fix commit: `6b23c0c41d1c8ea5665aa9830f0130523f86b7b3`
   - Merge: `5ee3c6d0c5c53dd43d2b3d8a59e0b6c072024b79`
 
+- `benni_media_state v0.9.1`
+  - PR: https://github.com/Levtos/benni_media_state/pull/8
+  - Release: https://github.com/Levtos/benni_media_state/releases/tag/v0.9.1
+  - Fix commit: `b86ded058edb8f82c2c5f22b6c7c0f7cd431d463`
+  - Merge: `24a899ffe200188f175667f08e72aa9a8ec4330a`
+  - Handoff: https://github.com/Levtos/benni_media_state/blob/main/docs/fleet-212-parents-presence-handoff.md
+
 ## Gates
 
 - `benni_media_state v0.9.0`: `pytest` 51 passed, `compileall` green.
@@ -87,6 +95,7 @@ audio_scenario_detail=gayfm
 - `benni_media v0.6.2`: `compileall` green, `node --check custom_components/benni_media/frontend/app/main.js` green.
 - `benni_media_policy v0.12.2`: `pytest` 88 passed, `compileall` green.
 - `benni_media_apply` was rechecked after the v0.12.2 policy fix: `pytest` 105 passed, `compileall` green.
+- `benni_media_state v0.9.1`: `pytest` 51 passed, `compileall` green.
 
 Ruff in `benni_media_policy` still reports existing repository style backlog (`I001`, broad `UP045` Optional-modernization). No GitHub status checks were configured on PR #11.
 
