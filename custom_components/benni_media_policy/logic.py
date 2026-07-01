@@ -95,6 +95,9 @@ class Inputs:
     entertainment_active: bool = False
     headset_active: bool = False
     quiet_mode: bool = False
+    presence_state: Optional[str] = None
+    presence_degraded: bool = False
+    away_gate: Optional[bool] = None
     # eigene Inputs:
     homepods_state: Optional[str] = None      # "playing"/"paused"/"idle"/…
     homepods_configured: bool = False
@@ -271,6 +274,22 @@ def decide_audio_scenario(
     return scenario, AUDIO_SCENARIO_LABELS[scenario], detail
 
 
+def media_block_reason(inp: Inputs) -> Optional[str]:
+    """Highest-priority absence/presence block.
+
+    `unknown`/unavailable presence must not behave like "home": it suppresses
+    automatic music decisions instead of forcing the baseline.
+    """
+    if inp.away_gate is True:
+        return "away_gate"
+    presence = (inp.presence_state or "").strip().lower()
+    if presence == "abwesend":
+        return "presence_away"
+    if presence == "unknown" or inp.presence_degraded:
+        return "presence_unknown"
+    return None
+
+
 def is_grind(inp: Inputs) -> bool:
     """GRIND-Delta gilt nur im Gaming-Context mit subcontext == gaming_grind."""
     return inp.context == CTX_GAMING and inp.subcontext == SUB_GAME_GRIND
@@ -314,6 +333,22 @@ def decide_action(
     )
     homepods_playing = inp.homepods_state == "playing"
     homepods_missing = not inp.homepods_configured
+
+    block_reason = media_block_reason(inp)
+    if block_reason:
+        new_state.auto_paused = False
+        new_state.pre_pause_mode = None
+        new_state.manual_stop = False
+        new_state.last_homepods_playing = homepods_playing
+        new_state.last_competes = False
+        new_state.last_planned_radio_active = inp.planned_radio_active
+        new_state.last_manual_playback_active = inp.manual_playback_active
+        new_state.last_wake_needed = inp.wake_needed is True
+        if homepods_missing:
+            return ACTION_NONE, False, False, "homepods_entity_missing", new_state
+        if homepods_playing:
+            return ACTION_PAUSE, True, False, f"{block_reason}_pause_homepods", new_state
+        return ACTION_NONE, False, False, f"{block_reason}_blocks_media", new_state
 
     # ---- Persistente Übergänge (auf Basis des vorigen Ticks) ----
     if state.last_homepods_playing and not homepods_playing:
@@ -726,6 +761,38 @@ def decide(
 
     pc_gaming = is_pc_gaming(inp)
     d.is_pc_gaming = pc_gaming
+
+    block_reason = media_block_reason(inp)
+    if block_reason:
+        d.audio_owner = AUDIO_OWNER_NONE
+        d.owner_reason = block_reason
+        d.audio_scenario = AUDIO_SCENARIO_OFF
+        d.audio_scenario_label = AUDIO_SCENARIO_LABELS[AUDIO_SCENARIO_OFF]
+        d.audio_scenario_detail = None
+        reasons.append(f"owner:{block_reason}")
+        reasons.append("scenario:off")
+
+        action, should_pause, resume_allowed, action_reason, new_state = decide_action(
+            inp, AUDIO_OWNER_NONE, False, state
+        )
+        d.action = action
+        d.homepods_should_pause = should_pause
+        d.homepods_resume_allowed = resume_allowed
+        d.action_reason = action_reason
+        d.manual_stop = new_state.manual_stop
+        reasons.append(f"action:{action_reason}")
+
+        d.volume_policy = VOL_POLICY_IDLE
+        d.volume_target_homepods = 0.0 if inp.homepods_configured else None
+        d.volume_target_denon = 0.0 if inp.denon_configured else None
+        d.volume_apply_allowed = False
+        d.volume_reason = block_reason
+        reasons.append(f"volume:{block_reason}")
+        d.subwoofer_allowed = False
+        d.subwoofer_block_reason = block_reason
+        reasons.append(f"sub_off:{block_reason}")
+        d.active_reasons = reasons
+        return d, new_state
 
     owner, owner_label = decide_owner(inp)
     d.audio_owner = owner

@@ -624,3 +624,55 @@ def test_scenario_exposed_in_as_dict():
     assert data["audio_scenario"] == C.AUDIO_SCENARIO_MUSIC
     assert data["audio_scenario_label"] == "Musik"
     assert data["audio_scenario_detail"] == "GAYFM"
+
+
+# ----------------------------------------------- Presence / Away-Gate (FLEET-212)
+def test_away_gate_blocks_music_baseline():
+    d, _ = _decide(_inp(away_gate=True, radio_station="gayfm"))
+    assert d.audio_owner == C.AUDIO_OWNER_NONE
+    assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
+    assert d.volume_policy == C.VOL_POLICY_IDLE
+    assert d.volume_apply_allowed is False
+    assert d.volume_target_homepods == 0.0
+    assert d.volume_target_denon == 0.0
+
+
+def test_away_gate_pauses_active_homepods():
+    d, _ = _decide(_inp(away_gate=True, homepods_state="playing"))
+    assert d.action == C.ACTION_PAUSE
+    assert d.homepods_should_pause is True
+    assert d.homepods_resume_allowed is False
+
+
+def test_presence_away_blocks_radio_resume():
+    d1, s1 = _decide(_inp(context=C.CTX_TV, homepods_state="playing",
+                          planned_radio_active=True))
+    d2, s2 = _decide(_inp(context=C.CTX_TV, homepods_state="paused",
+                          planned_radio_active=True), s1)
+    assert s2.auto_paused is True
+    assert s2.pre_pause_mode == C.RESUME_MODE_RADIO
+    d3, s3 = _decide(_inp(presence_state="abwesend", homepods_state="paused"), s2)
+    assert d3.action == C.ACTION_NONE
+    assert d3.homepods_resume_allowed is False
+    assert s3.auto_paused is False
+    assert s3.pre_pause_mode is None
+
+
+def test_home_presence_allows_normal_music_baseline_again():
+    d, _ = _decide(_inp(presence_state="zuhause", radio_station="gayfm"))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
+    assert d.volume_policy == C.VOL_POLICY_IDLE
+    assert d.volume_apply_allowed is True
+
+
+def test_unknown_presence_does_not_force_music():
+    d, _ = _decide(_inp(presence_state="unknown", radio_station="gayfm"))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
+    assert d.volume_apply_allowed is False
+
+
+def test_entertainment_false_with_away_does_not_keep_music_running():
+    d, _ = _decide(_inp(away_gate=True, entertainment_active=False,
+                        homepods_state="playing"))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
+    assert d.action == C.ACTION_PAUSE
