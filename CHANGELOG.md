@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.1 - FLEET-212: Media Away Gate Fix
+
+- Consume `sensor.benni_media_state_presence_state` and
+  `binary_sensor.benni_media_state_away_gate`.
+- Treat Away/unknown presence as a highest-priority media block so the music
+  baseline, resume, volume apply, and subwoofer policy do not keep audio alive.
+- Emit a HomePods pause decision when Away is active and HomePods are playing.
+
 ## 0.9.1 - Master ReBind
 
 - Repointed the Benni Denon active-source default from
