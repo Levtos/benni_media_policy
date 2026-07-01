@@ -43,6 +43,16 @@ Konsumenten: **FLEET-86** (Umbrella-Status zeigt audio_scenario statt
 media_context), **FLEET-84** (media_apply converge-to-desired — re-assert Soll
 bei Drift/Reconnect, zielt auf *aktuelles* audio_scenario, nie auf Snapshot).
 
+## FLEET-212 / Media Away Gate Follow-up ✅ (0.12.1 / 0.12.2)
+
+Away/unknown presence blockiert die Musik-Baseline, Resume, Volume-Apply und
+Subwoofer-Policy. Der Folgefix `0.12.2` stellt sicher, dass die Musik-Baseline
+bei `zuhause`, gewaehltem Radiosender und idle HomePods wieder aktiv startet
+(`action=start_radio`, `volume_policy=media`, HomePods-Target > 0), ohne
+`audio_owner` als beobachtete Wahrheit zu verfaelschen.
+
+Claude-Handoff: `docs/fleet-212-media-away-gate-handoff.md`.
+
 ## Konsum-Vertrag
 
 Konsumiert `benni_media_state` **nur über Entity-State** — nie per Python-Import.
