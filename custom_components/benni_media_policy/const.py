@@ -161,6 +161,8 @@ CONF_MEDIA_DEVICE: Final[str] = "media_device_entity"
 CONF_ENTERTAINMENT_ACTIVE: Final[str] = "entertainment_active_entity"
 CONF_HEADSET_ACTIVE: Final[str] = "headset_active_entity"
 CONF_QUIET_MODE: Final[str] = "quiet_mode_entity"
+CONF_PRESENCE_STATE: Final[str] = "presence_state_entity"
+CONF_AWAY_GATE: Final[str] = "away_gate_entity"
 
 # Eigene Policy-Inputs (Roh-/Template-Entitäten — core_devices-Atomics später).
 CONF_HOMEPODS: Final[str] = "homepods_player_entity"   # MA-Gruppe (1 Player)
@@ -184,6 +186,7 @@ CONF_WAKE_NEEDED: Final[str] = "wake_needed_entity"  # wake_planner Wach-Flanke 
 WATCH_KEYS: Final[tuple[str, ...]] = (
     CONF_MEDIA_CONTEXT, CONF_MEDIA_SUBCONTEXT, CONF_MEDIA_DEVICE,
     CONF_ENTERTAINMENT_ACTIVE, CONF_HEADSET_ACTIVE, CONF_QUIET_MODE,
+    CONF_PRESENCE_STATE, CONF_AWAY_GATE,
     CONF_HOMEPODS, CONF_DENON, CONF_DENON_ACTIVE,
     CONF_BIO_STATE, CONF_DAY_STATE, CONF_ACTIVITY_STATE, CONF_OPENING,
     CONF_HOMEPODS_MUSIC_ENUM,
@@ -209,6 +212,8 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_ENTERTAINMENT_ACTIVE: "binary_sensor.benni_media_state_entertainment_active",
         CONF_HEADSET_ACTIVE: "binary_sensor.benni_media_state_headset_active",
         CONF_QUIET_MODE: "binary_sensor.benni_media_state_quiet_mode",
+        CONF_PRESENCE_STATE: "sensor.benni_media_state_presence_state",
+        CONF_AWAY_GATE: "binary_sensor.benni_media_state_away_gate",
         # eigene Geräte/Inputs:
         CONF_HOMEPODS: "media_player.living_homepods_ma_group",
         CONF_DENON: "media_player.living_denon",
