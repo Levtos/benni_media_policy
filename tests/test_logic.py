@@ -659,10 +659,34 @@ def test_presence_away_blocks_radio_resume():
 
 
 def test_home_presence_allows_normal_music_baseline_again():
-    d, _ = _decide(_inp(presence_state="zuhause", radio_station="gayfm"))
+    d, _ = _decide(_inp(
+        presence_state="zuhause",
+        radio_station="gayfm",
+        homepods_state="idle",
+        day_state="afternoon",
+    ))
     assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
-    assert d.volume_policy == C.VOL_POLICY_IDLE
+    assert d.action == C.ACTION_START_RADIO
+    assert d.homepods_resume_allowed is True
+    assert d.volume_policy == C.VOL_POLICY_MEDIA
     assert d.volume_apply_allowed is True
+    assert d.volume_target_homepods == 0.45
+    assert d.volume_target_denon == 0.0
+    assert d.music_baseline_active is True
+
+
+def test_manual_stop_blocks_music_baseline_start():
+    d, _ = _decide(_inp(
+        presence_state="zuhause",
+        radio_station="gayfm",
+        homepods_state="idle",
+        media_stop_latch=True,
+    ))
+    assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
+    assert d.action == C.ACTION_NONE
+    assert d.volume_policy == C.VOL_POLICY_IDLE
+    assert d.volume_target_homepods == 0.0
+    assert d.music_baseline_active is False
 
 
 def test_unknown_presence_does_not_force_music():

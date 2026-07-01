@@ -385,6 +385,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         dbg["volume_formula"] = logic.volume_breakdown(
             inp, dbg.get("audio_owner", "none"), bool(dbg.get("is_grind", False)),
             self.settings(), dbg.get("audio_scenario"),
+            bool(dbg.get("music_baseline_active", False)),
         )
         dbg["reasons"] = logic.structured_reasons(dbg)
         dbg["bindings"] = self.bindings()

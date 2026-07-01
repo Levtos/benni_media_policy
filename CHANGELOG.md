@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.2 - Music Baseline Home Restore
+
+- Start the HomePods radio baseline again when presence is home, a station is
+  selected, and no higher-priority media stack or manual stop is active.
+- Keep `audio_owner` observational while using a separate music-baseline intent
+  for the `start_radio` action and audible HomePods target volume.
+- Preserve Away/unknown-presence blocking for music baseline, resume, volume
+  apply, and subwoofer policy.
+
 ## 0.12.1 - FLEET-212: Media Away Gate Fix
 
 - Consume `sensor.benni_media_state_presence_state` and

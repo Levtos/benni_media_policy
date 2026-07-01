@@ -188,6 +188,7 @@ class PolicyDecision:
     denon_audio_path: bool = False
     is_grind: bool = False
     is_pc_gaming: bool = False
+    music_baseline_active: bool = False
     track_boost_applied: bool = False
     music_muted: bool = False
     manual_stop: bool = False   # Stop hält bis zum nächsten Wecken (wake_planner)
@@ -220,6 +221,7 @@ class PolicyDecision:
             "denon_audio_path": self.denon_audio_path,
             "is_grind": self.is_grind,
             "is_pc_gaming": self.is_pc_gaming,
+            "music_baseline_active": self.music_baseline_active,
             "track_boost_applied": self.track_boost_applied,
             "music_muted": self.music_muted,
             "active_reasons": list(self.active_reasons),
@@ -274,6 +276,24 @@ def decide_audio_scenario(
     return scenario, AUDIO_SCENARIO_LABELS[scenario], detail
 
 
+def music_baseline_candidate(inp: Inputs, owner: str, grind: bool) -> bool:
+    """True when the desired music baseline should actively start HomePods.
+
+    `audio_owner` stays observational: idle HomePods still mean owner NONE until
+    playback actually starts. This flag is the policy intent that lets Apply
+    converge the baseline back to audible radio after returning home.
+    """
+    return (
+        owner == AUDIO_OWNER_NONE
+        and not grind
+        and inp.homepods_configured
+        and not inp.bio_sleep
+        and not inp.quiet_mode
+        and not inp.manual_playback_active
+        and bool((inp.radio_station or "").strip())
+    )
+
+
 def media_block_reason(inp: Inputs) -> Optional[str]:
     """Highest-priority absence/presence block.
 
@@ -317,7 +337,8 @@ def competes_with_homepods(owner: str, grind: bool, pc_gaming: bool = False) -> 
 # Audio-Action-Zustandsmaschine (Orchestrator-Lift; competes statt other_stack)
 # --------------------------------------------------------------------------- #
 def decide_action(
-    inp: Inputs, owner: str, competes: bool, state: OrchestratorState
+    inp: Inputs, owner: str, competes: bool, state: OrchestratorState,
+    music_baseline: bool = False,
 ) -> tuple[str, bool, bool, str, OrchestratorState]:
     """Return (action, should_pause, resume_allowed, reason, new_state)."""
     new_state = OrchestratorState(
@@ -404,6 +425,10 @@ def decide_action(
             reason = "bio_sleep_blocks_resume"
         elif new_state.manual_stop:
             reason = "manual_stop_blocks_resume"
+        elif music_baseline and not homepods_playing:
+            action = ACTION_START_RADIO
+            resume_allowed = True
+            reason = "music_baseline_start_radio"
         elif not new_state.auto_paused:
             reason = "no_auto_pause"
         else:
@@ -474,7 +499,7 @@ def music_muted(inp: Inputs) -> bool:
 
 def decide_volume(
     inp: Inputs, owner: str, grind: bool, s: VolumeSettings,
-    scenario: Optional[str] = None,
+    scenario: Optional[str] = None, music_baseline: bool = False,
 ) -> tuple[str, Optional[float], Optional[float], bool, str, bool, bool]:
     """R17-Volume-Modell v3.1. Return
     (policy, homepods_target, denon_target, apply_allowed, reason,
@@ -490,7 +515,9 @@ def decide_volume(
     # ---- Routing: welche Seite spielt? PC-Gaming (FLEET-101) → HomePods normal,
     # Denon aus (Game-Audio im Headset). GRIND → beide (HomePods dominant). ----
     pc_gaming = is_pc_gaming(inp)
-    if pc_gaming:
+    if music_baseline:
+        hp_plays, dn_plays = True, False
+    elif pc_gaming:
         hp_plays, dn_plays = True, False
     elif grind:
         hp_plays, dn_plays = True, True
@@ -513,7 +540,7 @@ def decide_volume(
         return VOL_POLICY_DUCKED, hp, dn, True, "quiet_mode_ducked", False, False
 
     # 4. Idle: kein Owner und kein Grind.
-    if owner == AUDIO_OWNER_NONE and not grind:
+    if owner == AUDIO_OWNER_NONE and not grind and not music_baseline:
         hp = 0.0 if inp.homepods_configured else None
         dn = 0.0 if inp.denon_configured else None
         return VOL_POLICY_IDLE, hp, dn, True, "idle_no_owner", False, False
@@ -553,7 +580,9 @@ def decide_volume(
                 boost=0.0,
                 active_min=s.active_min, hard_max=s.denon_max,
             )
-    if pc_gaming:
+    if music_baseline:
+        reason = "music_baseline_homepods"
+    elif pc_gaming:
         reason = "pc_gaming_homepods_denon_off"
     elif grind:
         reason = "grind_homepods_denon_kulisse"
@@ -569,11 +598,13 @@ def decide_volume(
 # --------------------------------------------------------------------------- #
 def volume_breakdown(
     inp: Inputs, owner: str, grind: bool, s: VolumeSettings,
-    scenario: Optional[str] = None,
+    scenario: Optional[str] = None, music_baseline: bool = False,
 ) -> dict[str, Any]:
     """R17-Komponenten je Gerät (base · scenario · window · activity · nudge ·
     boost → result). Nur im MEDIA-Zweig voll aussagekräftig; sonst result=0/—."""
-    if is_pc_gaming(inp):
+    if music_baseline:
+        hp_plays, dn_plays = True, False
+    elif is_pc_gaming(inp):
         hp_plays, dn_plays = True, False
     elif grind:
         hp_plays, dn_plays = True, True
@@ -805,9 +836,10 @@ def decide(
     d.audio_scenario_detail = scenario_detail
     reasons.append(f"scenario:{scenario}")
 
+    baseline_candidate = music_baseline_candidate(inp, owner, grind)
     competes = competes_with_homepods(owner, grind, pc_gaming)
     action, should_pause, resume_allowed, action_reason, new_state = decide_action(
-        inp, owner, competes, state
+        inp, owner, competes, state, baseline_candidate
     )
     d.action = action
     d.homepods_should_pause = should_pause
@@ -816,8 +848,11 @@ def decide(
     d.manual_stop = new_state.manual_stop
     reasons.append(f"action:{action_reason}")
 
+    baseline_active = baseline_candidate and not new_state.manual_stop
+    d.music_baseline_active = baseline_active
+
     policy, hp, dn, apply_allowed, vol_reason, boost_applied, muted = decide_volume(
-        inp, owner, grind, settings, scenario
+        inp, owner, grind, settings, scenario, baseline_active
     )
     # ---- FLEET-153: HomePods-Pfad sticky über Idle-Gaps ----
     # Ein transienter owner=none (Playback-Lücke, Track-/Sender-Wechsel) darf das
@@ -827,7 +862,7 @@ def decide(
     # war; echter Pfadwechsel (→Denon/TV/Gaming) löscht den Stick. Quiet/Ducking
     # bleibt eigener Zweig (hart 0.10, unberührt). Idle ist Geräte-Sache
     # (pause/resume via action), nicht Volume → kein Ramp-Down (OQ-1).
-    hp_on_path = pc_gaming or grind or owner == AUDIO_OWNER_HOMEPODS
+    hp_on_path = baseline_active or pc_gaming or grind or owner == AUDIO_OWNER_HOMEPODS
     if policy == VOL_POLICY_MEDIA and hp_on_path and hp is not None:
         new_state.last_hp_media_target = hp
     elif policy == VOL_POLICY_MEDIA and not hp_on_path:
