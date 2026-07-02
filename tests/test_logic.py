@@ -644,38 +644,48 @@ def test_away_gate_pauses_active_homepods():
     assert d.homepods_resume_allowed is False
 
 
-def test_presence_away_blocks_radio_resume():
+def test_presence_away_preserves_resume_memory_and_resumes_home():
+    # Presence-away ist ein konkurrierender Stack wie der TV: es blockiert das
+    # Resume, während weg — ABER erhält die Resume-Erinnerung, damit Heimkehr die
+    # Musik über die normale Maschinerie zurückholt (eine Flanke, kein Dauer-Level).
     d1, s1 = _decide(_inp(context=C.CTX_TV, homepods_state="playing",
                           planned_radio_active=True))
     d2, s2 = _decide(_inp(context=C.CTX_TV, homepods_state="paused",
                           planned_radio_active=True), s1)
     assert s2.auto_paused is True
     assert s2.pre_pause_mode == C.RESUME_MODE_RADIO
-    d3, s3 = _decide(_inp(presence_state="abwesend", homepods_state="paused"), s2)
+    # Weg: Resume blockiert, aber Erinnerung ERHALTEN (anders als der alte
+    # Hard-Block, der sie löschte — genau das erzwang den Dauer-Baseline-Hack).
+    d3, s3 = _decide(_inp(presence_state="abwesend", homepods_state="paused",
+                          planned_radio_active=True), s2)
     assert d3.action == C.ACTION_NONE
     assert d3.homepods_resume_allowed is False
-    assert s3.auto_paused is False
-    assert s3.pre_pause_mode is None
+    assert s3.auto_paused is True
+    assert s3.pre_pause_mode == C.RESUME_MODE_RADIO
+    # Heim: Resume-Flanke → start_radio (wie TV-aus).
+    d4, s4 = _decide(_inp(presence_state="zuhause", homepods_state="paused",
+                          planned_radio_active=True), s3)
+    assert d4.action == C.ACTION_START_RADIO
+    assert d4.homepods_resume_allowed is True
 
 
-def test_home_presence_allows_normal_music_baseline_again():
+def test_home_idle_does_not_force_music_start():
+    # Kein Dauer-Baseline mehr: HomePods zuhause idle + Sender gewählt, aber
+    # nichts lief vorher → bleibt idle (kein erzwungener start_radio). Musik
+    # startet nur über echte Trigger (Wake / Heimkehr / TV-aus), nicht bei jedem
+    # Idle-Tick. Das ist die Wurzel-Kur gegen den Radio-Restart-Churn.
     d, _ = _decide(_inp(
         presence_state="zuhause",
         radio_station="gayfm",
         homepods_state="idle",
         day_state="afternoon",
     ))
-    assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
-    assert d.action == C.ACTION_START_RADIO
-    assert d.homepods_resume_allowed is True
-    assert d.volume_policy == C.VOL_POLICY_MEDIA
-    assert d.volume_apply_allowed is True
-    assert d.volume_target_homepods == 0.45
-    assert d.volume_target_denon == 0.0
-    assert d.music_baseline_active is True
+    assert d.action == C.ACTION_NONE
+    assert d.volume_policy == C.VOL_POLICY_IDLE
+    assert d.volume_target_homepods == 0.0
 
 
-def test_manual_stop_blocks_music_baseline_start():
+def test_manual_stop_keeps_idle():
     d, _ = _decide(_inp(
         presence_state="zuhause",
         radio_station="gayfm",
@@ -686,7 +696,6 @@ def test_manual_stop_blocks_music_baseline_start():
     assert d.action == C.ACTION_NONE
     assert d.volume_policy == C.VOL_POLICY_IDLE
     assert d.volume_target_homepods == 0.0
-    assert d.music_baseline_active is False
 
 
 def test_unknown_presence_does_not_force_music():

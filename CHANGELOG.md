@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.13.0 - Presence als Trigger (Dauer-Baseline entfernt)
+
+- **`music_baseline_active` komplett entfernt.** Der in 0.12.2 eingeführte
+  Dauer-Level („HomePods zuhause idle → dauernd `start_radio` fordern") war die
+  Wurzel des Radio-Restart-Churns beim HA-Boot: er zwang Apply, den im
+  Restore-Fenster ohnehin anlaufenden Stream neu zu starten. Kein Auto-Start
+  mehr bei jedem Idle-Tick.
+- **Presence-away = konkurrierender Stack wie der TV.** Statt des alten
+  Hard-Blocks (der `auto_paused`/`pre_pause_mode` löschte und damit die
+  Resume-Erinnerung zerstörte — genau das erzwang den Baseline-Hack) pausiert
+  Away jetzt MIT erhaltener Resume-Erinnerung. Heimkehr löst das Resume über die
+  bestehende Maschinerie aus (`start_radio`/`resume`, EINE Flanke), Volume via
+  sticky `last_hp_media_target` (FLEET-153). „Semantisch dieselbe Logik wie
+  Wake/TV-aus, nur ein anderer Triggerpunkt."
+- Netto: Musik läuft über echte Trigger (Wake, TV-aus, Heimkehr), nicht als
+  Dauer-Forderung. Macht den Apply-Startup-Guard (v0.14.7–0.14.9) langfristig
+  überflüssig. `unknown`/degraded Presence hält weiterhin ohne Resume-Kandidat.
+
 ## 0.12.2 - Music Baseline Home Restore
 
 - Start the HomePods radio baseline again when presence is home, a station is
