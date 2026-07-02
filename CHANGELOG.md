@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.14.1 - manual_stop nur noch explizit (Stream-Abriss ≠ Stopp)
+
+- **Kritischer Fix zur Baseline (v0.14.0).** `manual_stop` wurde aus jedem
+  `playing→idle` ohne konkurrierenden Stack abgeleitet — also auch aus einem
+  **Stream-Abriss** (HA-Neustart, MA-Reconnect, Netz-Blip). Das setzte
+  `manual_stop=true`, was die Baseline-Recovery blockierte → ein abgerissener
+  Stream kam NIE zurück (live: nach Deploy-Restart `manual_stop` stuck, Musik
+  tot bis zum Wecken). Ein Abriss ist nicht von einer User-Pause unterscheidbar
+  (beide → `idle`).
+- Fix: `manual_stop` kommt **nur noch vom expliziten User-Stopp**
+  (`media_stop_latch`), nicht aus der `playing→idle`-Ableitung. Stream-Abriss →
+  kein manual_stop → Baseline holt zurück. Echter Stopp → `input_boolean.
+  media_stop_latch` setzen.
+- Prefill: `media_stop_latch_entity` → `input_boolean.media_stop_latch` (wie
+  apply). **NICHT** auf die eigene `manual_stop`-Ausgabe binden — das war ein
+  Selbst-Latch, der bis zum Wecken klebte. **Wer den Slot manuell auf
+  `binary_sensor.system_benni_media_policy_manual_stop` gebunden hat, muss das
+  in den Optionen entfernen/umhängen.**
+
 ## 0.14.0 - Debouncte Musik-Baseline (Restart/Dropout-Recovery)
 
 - **Musik-Baseline wieder da, aber entkoppelt vom Churn.** Nach v0.13.0 (Baseline

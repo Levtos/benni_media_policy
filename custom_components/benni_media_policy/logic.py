@@ -420,8 +420,13 @@ def decide_action(
             else:
                 new_state.pre_pause_mode = None
         else:
-            # Kein konkurrierender Stack → User hat selbst gestoppt.
-            new_state.manual_stop = True
+            # Kein konkurrierender Stack → playing→idle. Das ist NICHT
+            # unterscheidbar zwischen User-Pause und Stream-Abriss/Dropout
+            # (HA-Neustart, MA-Reconnect, Netz-Blip) — beide gehen auf `idle`.
+            # Es als `manual_stop` zu werten hat die Baseline-Recovery blockiert
+            # (ein Abriss konnte nie zurückkommen). Daher: hier NICHTS latchen.
+            # Ein echter Stopp kommt ausschließlich explizit über den
+            # media_stop_latch (User-Control) unten.
             new_state.auto_paused = False
             new_state.pre_pause_mode = None
     elif homepods_playing and not state.last_homepods_playing:

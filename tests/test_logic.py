@@ -347,13 +347,12 @@ def test_radio_resume_after_entertainment():
 
 
 def test_manual_stop_blocks_resume():
-    # tick1: HomePods spielen, kein competing stack (owner homepods).
-    d1, s1 = _decide(_inp(homepods_state="playing"))
-    # tick2: User stoppt selbst (kein competing stack).
-    d2, s2 = _decide(_inp(homepods_state="idle"), s1)
-    assert s2.manual_stop is True
-    assert d2.action == C.ACTION_NONE
-    assert d2.homepods_resume_allowed is False
+    # manual_stop kommt jetzt NUR vom expliziten User-Latch (nicht aus
+    # playing→idle abgeleitet) → blockiert Resume/Baseline.
+    d, s = _decide(_inp(homepods_state="idle", media_stop_latch=True))
+    assert s.manual_stop is True
+    assert d.action == C.ACTION_NONE
+    assert d.homepods_resume_allowed is False
 
 
 def test_media_stop_latch_forces_manual_stop():
@@ -361,29 +360,40 @@ def test_media_stop_latch_forces_manual_stop():
     assert s.manual_stop is True
 
 
-# ------------------------------------------------ Wake-Reset (wake_planner)
-def test_wake_needed_clears_manual_stop():
-    # Tick 1: HomePods spielen → Tick 2: User stoppt selbst → manual_stop.
+def test_stream_drop_does_not_set_manual_stop():
+    # DER Fix: playing→idle OHNE konkurrierenden Stack (Stream-Abriss/Dropout/
+    # HA-Neustart) darf KEIN manual_stop setzen — sonst blockiert es die
+    # Baseline-Recovery (der Stream käme nie zurück).
     _d1, s1 = _decide(_inp(homepods_state="playing"))
     d2, s2 = _decide(_inp(homepods_state="idle"), state=s1)
-    assert s2.manual_stop is True and d2.manual_stop is True
-    # Tick 3: Wach-Flanke → manual_stop wieder frei (nativer Ersatz der YAML-Automation).
-    d3, s3 = _decide(_inp(homepods_state="idle", wake_needed=True), state=s2)
-    assert s3.manual_stop is False and d3.manual_stop is False
+    assert s2.manual_stop is False
+    assert d2.manual_stop is False
+
+
+# ------------------------------------------------ Wake-Reset (wake_planner)
+def test_wake_needed_clears_manual_stop():
+    # Stopp via Latch → manual_stop. Wach-Flanke räumt ihn ab (gewinnt auch über
+    # einen noch gehaltenen Latch).
+    _d1, s1 = _decide(_inp(homepods_state="idle", media_stop_latch=True))
+    assert s1.manual_stop is True
+    d2, s2 = _decide(
+        _inp(homepods_state="idle", media_stop_latch=True, wake_needed=True), state=s1
+    )
+    assert s2.manual_stop is False and d2.manual_stop is False
 
 
 def test_wake_needed_only_clears_on_rising_edge():
-    # wake_needed dauerhaft on (kein Edge): ein frischer Stop bleibt manual_stop.
-    _d0, s0 = _decide(_inp(homepods_state="playing", wake_needed=True))
-    _d1, s1 = _decide(_inp(homepods_state="playing", wake_needed=True), state=s0)
-    d2, _s2 = _decide(_inp(homepods_state="idle", wake_needed=True), state=s1)
-    assert d2.manual_stop is True  # kein Edge → kein Clear
+    # wake_needed dauerhaft on (kein Edge): ein gehaltener Latch bleibt manual_stop.
+    _d0, s0 = _decide(_inp(homepods_state="idle", media_stop_latch=True, wake_needed=True))
+    d1, _s1 = _decide(
+        _inp(homepods_state="idle", media_stop_latch=True, wake_needed=True), state=s0
+    )
+    assert d1.manual_stop is True  # kein Edge → kein Clear, Latch hält
 
 
 def test_manual_stop_exposed_in_decision_dict():
-    _d1, s1 = _decide(_inp(homepods_state="playing"))
-    d2, _ = _decide(_inp(homepods_state="idle"), state=s1)
-    assert d2.as_dict()["manual_stop"] is True
+    d, _ = _decide(_inp(homepods_state="idle", media_stop_latch=True))
+    assert d.as_dict()["manual_stop"] is True
 
 
 def test_homepods_missing_blocks_action():

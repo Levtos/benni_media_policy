@@ -225,6 +225,9 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_HOMEPODS_MUSIC_ENUM: "sensor.title_classifier_musikkatalog_enum",
         CONF_MANUAL_PLAYBACK: "binary_sensor.media_manual_playback_active",
         CONF_PLANNED_RADIO: "binary_sensor.media_radio_playing_planned_station",
+        # Expliziter User-Stopp (wie apply). NICHT auf die eigene manual_stop-
+        # Ausgabe binden — das wäre ein Selbst-Latch, der bis zum Wecken klebt.
+        CONF_MEDIA_STOP_LATCH: "input_boolean.media_stop_latch",
         CONF_RADIO_STATION: "input_select.media_radio_station",
         CONF_WAKE_NEEDED: "binary_sensor.wake_planner_benni_wake_needed",
     },
