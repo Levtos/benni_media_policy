@@ -698,10 +698,36 @@ def test_manual_stop_keeps_idle():
     assert d.volume_target_homepods == 0.0
 
 
-def test_unknown_presence_does_not_force_music():
-    d, _ = _decide(_inp(presence_state="unknown", radio_station="gayfm"))
-    assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
-    assert d.volume_apply_allowed is False
+def test_unknown_presence_holds_does_not_start_when_idle():
+    # unknown (z.B. kurzer Reload-Flap) darf idle NICHT zwangs-starten.
+    d, _ = _decide(_inp(presence_state="unknown", radio_station="gayfm",
+                        homepods_state="idle"))
+    assert d.action == C.ACTION_NONE
+
+
+def test_unknown_presence_does_not_pause_playing_music():
+    # DER Reload-Bug: unknown ist KEIN Block mehr → laufende Musik läuft weiter,
+    # wird nicht pausiert und nicht auf Volume 0 gezwungen.
+    d, _ = _decide(_inp(presence_state="unknown", homepods_state="playing",
+                        radio_station="gayfm"))
+    assert d.action != C.ACTION_PAUSE
+    assert d.homepods_should_pause is False
+    assert d.audio_owner == C.AUDIO_OWNER_HOMEPODS
+    assert d.volume_policy == C.VOL_POLICY_MEDIA
+
+
+def test_unknown_presence_holds_resume_when_paused():
+    # War auto-paused (TV), Presence wird unknown → nicht resumen, bis wieder
+    # klar (zuhause). Kein blindes Wiederanwerfen.
+    d1, s1 = _decide(_inp(context=C.CTX_TV, homepods_state="playing",
+                          planned_radio_active=True))
+    d2, s2 = _decide(_inp(context=C.CTX_TV, homepods_state="paused",
+                          planned_radio_active=True), s1)
+    assert s2.auto_paused is True
+    d3, s3 = _decide(_inp(presence_state="unknown", homepods_state="paused",
+                          planned_radio_active=True), s2)
+    assert d3.action == C.ACTION_NONE
+    assert s3.auto_paused is True   # Erinnerung bleibt für spätere Heimkehr
 
 
 def test_entertainment_false_with_away_does_not_keep_music_running():
