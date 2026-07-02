@@ -685,15 +685,74 @@ def test_home_idle_does_not_force_music_start():
     assert d.volume_target_homepods == 0.0
 
 
-def test_manual_stop_keeps_idle():
+# --- debouncte Musik-Baseline (Restart/Dropout-Recovery) ------------------
+def test_baseline_starts_when_stably_idle_at_home():
+    # HomePods stabil idle (Debounce erfüllt) + zuhause + Sender + kein Stack →
+    # Radio-Stream (neu) starten, hörbar. Das ist die Restart-/Dropout-Recovery.
     d, _ = _decide(_inp(
         presence_state="zuhause",
         radio_station="gayfm",
         homepods_state="idle",
+        homepods_stably_idle=True,
+        day_state="afternoon",
+    ))
+    assert d.action == C.ACTION_START_RADIO
+    assert d.music_baseline_active is True
+    assert d.volume_policy == C.VOL_POLICY_MEDIA
+    assert d.volume_target_homepods and d.volume_target_homepods > 0
+
+
+def test_baseline_not_when_flapping_idle():
+    # Ohne Debounce (Restore-Flap/Track-Gap) → KEIN Start (kein Churn).
+    d, _ = _decide(_inp(
+        presence_state="zuhause", radio_station="gayfm",
+        homepods_state="idle", homepods_stably_idle=False,
+    ))
+    assert d.action == C.ACTION_NONE
+    assert d.music_baseline_active is False
+
+
+def test_baseline_not_when_tv():
+    # Benni: „nicht bei TV". TV-Stack → owner tv_denon → keine Baseline, auch
+    # wenn HomePods stabil idle sind.
+    d, _ = _decide(_inp(
+        context=C.CTX_TV, presence_state="zuhause", radio_station="gayfm",
+        homepods_state="idle", homepods_stably_idle=True,
+    ))
+    assert d.action != C.ACTION_START_RADIO
+    assert d.music_baseline_active is False
+
+
+def test_baseline_blocked_by_unknown_presence():
+    d, _ = _decide(_inp(
+        presence_state="unknown", radio_station="gayfm",
+        homepods_state="idle", homepods_stably_idle=True,
+    ))
+    assert d.action == C.ACTION_NONE
+    assert d.music_baseline_active is False
+
+
+def test_baseline_blocked_when_away():
+    d, _ = _decide(_inp(
+        away_gate=True, radio_station="gayfm",
+        homepods_state="idle", homepods_stably_idle=True,
+    ))
+    assert d.action != C.ACTION_START_RADIO
+    assert d.music_baseline_active is False
+
+
+def test_manual_stop_blocks_baseline():
+    # Manuell gestoppt → auch bei stabil idle KEIN Auto-Start (bis Wake).
+    d, _ = _decide(_inp(
+        presence_state="zuhause",
+        radio_station="gayfm",
+        homepods_state="idle",
+        homepods_stably_idle=True,
         media_stop_latch=True,
     ))
     assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
     assert d.action == C.ACTION_NONE
+    assert d.music_baseline_active is False
     assert d.volume_policy == C.VOL_POLICY_IDLE
     assert d.volume_target_homepods == 0.0
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.14.0 - Debouncte Musik-Baseline (Restart/Dropout-Recovery)
+
+- **Musik-Baseline wieder da, aber entkoppelt vom Churn.** Nach v0.13.0 (Baseline
+  ganz raus) startete ein HA-Neustart die Musik nicht mehr wieder: der HomePod/
+  MA-Stream reißt beim Neustart physisch ab, und ohne Baseline holte ihn nichts
+  zurück (Benni musste manuell gayfm klicken). Jetzt: `music_baseline_candidate`
+  startet den Radio-Stream, **aber nur wenn die HomePods stabil ≥30 s nicht
+  spielen** (`homepods_stably_idle`, Coordinator-Debounce mit One-Shot-Timer).
+  Der Restore-Flap (~10 s) und Track-/Sender-Gaps lösen ihn NICHT aus → kein
+  Geflacker wie in Codex' Dauer-Level (v0.12.2).
+- **Nur wenn Musik spielen darf:** `owner == none` schließt TV/Gaming/Denon aus
+  (Benni: „nicht bei TV"); away/sleep/quiet/manual-stop/unknown-Presence blocken
+  weiter. Nur im `not auto_paused`-Zweig → der away/TV-`pre_pause_mode`-Resume
+  (sofort, v0.13.0) behält Vorrang; die Baseline fängt nur den Fall OHNE
+  Erinnerung ab (Kalt-Idle / Restart-Abriss).
+- Volume startet hörbar (kein erster Tick auf 0). `music_baseline_active` wieder
+  als Debug-Feld.
+
 ## 0.13.1 - unknown-Presence hält, statt zu pausieren
 
 - **Reload/Restart-Pause-Bug behoben.** Bei einem Reload flappt `presence_state`
