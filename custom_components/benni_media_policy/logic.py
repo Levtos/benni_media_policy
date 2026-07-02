@@ -275,19 +275,27 @@ def decide_audio_scenario(
 
 
 def media_block_reason(inp: Inputs) -> Optional[str]:
-    """Highest-priority absence/presence block.
+    """Höchstpriorer Abwesenheits-Block. NUR echte Abwesenheit (away) blockt
+    Media hart: scenario off, Pause laufender HomePods, Volume 0.
 
-    `unknown`/unavailable presence must not behave like "home": it suppresses
-    automatic music decisions instead of forcing the baseline.
+    `unknown`/degraded ist BEWUSST kein Block: bei einem Reload/Restart flappt
+    presence_state kurz auf `unknown` — das darf laufende Musik NICHT anfassen
+    (defensiv: wir wissen nicht, ob weg). Unknown hält nur Auto-Start/Resume
+    zurück, siehe `presence_holds_resume`.
     """
     if inp.away_gate is True:
         return "away_gate"
     presence = (inp.presence_state or "").strip().lower()
     if presence == "abwesend":
         return "presence_away"
-    if presence == "unknown" or inp.presence_degraded:
-        return "presence_unknown"
     return None
+
+
+def presence_holds_resume(inp: Inputs) -> bool:
+    """True bei `unknown`/degraded Presence: kein Auto-Start/Resume (wir wissen
+    nicht, ob zuhause), ABER laufende Musik wird NICHT pausiert (kein Block)."""
+    presence = (inp.presence_state or "").strip().lower()
+    return presence == "unknown" or inp.presence_degraded
 
 
 def is_grind(inp: Inputs) -> bool:
@@ -424,6 +432,10 @@ def decide_action(
             reason = "bio_sleep_blocks_resume"
         elif new_state.manual_stop:
             reason = "manual_stop_blocks_resume"
+        elif presence_holds_resume(inp):
+            # unknown/degraded: nicht resumen (wissen nicht, ob zuhause) — aber
+            # auch nicht pausieren; laufende Musik bleibt unberührt.
+            reason = "presence_unknown_holds_resume"
         elif not new_state.auto_paused:
             reason = "no_auto_pause"
         else:

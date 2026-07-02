@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.1 - unknown-Presence hält, statt zu pausieren
+
+- **Reload/Restart-Pause-Bug behoben.** Bei einem Reload flappt `presence_state`
+  kurz auf `unknown` (media_state-Startup-Transiente). `unknown` war noch ein
+  Hard-Block → `pause_homepods` → Musik ging aus und kam (mangels Resume-
+  Erinnerung bei unknown) nicht zurück. Live gesehen nach dem v0.13.0-Deploy.
+- Fix: `unknown`/degraded ist **kein Block** mehr. Es hält nur Auto-Start/Resume
+  zurück (`presence_holds_resume`: wir wissen nicht, ob zuhause), fasst aber
+  **laufende Musik nicht an** (kein Pause, kein Volume-0). Nur echtes `abwesend`
+  /away_gate blockt weiterhin hart. Defensiv-korrekt: unbekannt ≠ weg.
+
 ## 0.13.0 - Presence als Trigger (Dauer-Baseline entfernt)
 
 - **`music_baseline_active` komplett entfernt.** Der in 0.12.2 eingeführte
