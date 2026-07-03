@@ -692,42 +692,87 @@ def test_presence_away_preserves_resume_memory_and_resumes_home():
     assert d4.homepods_resume_allowed is True
 
 
-def test_home_idle_does_not_force_music_start():
-    # Kein Dauer-Baseline mehr: HomePods zuhause idle + Sender gewählt, aber
-    # nichts lief vorher → bleibt idle (kein erzwungener start_radio). Musik
-    # startet nur über echte Trigger (Wake / Heimkehr / TV-aus), nicht bei jedem
-    # Idle-Tick. Das ist die Wurzel-Kur gegen den Radio-Restart-Churn.
+# --- Musik-Baseline als Idle-Resume-Netz (FLEET-246, zurück mit Wake-Gate) ---
+def test_baseline_starts_when_stably_idle_at_home():
+    # HomePods stabil idle (Debounce erfüllt) + zuhause + Sender + kein Stack →
+    # start_radio. Das Sicherheitsnetz, wenn die Resume-Erinnerung verloren ging.
     d, _ = _decide(_inp(
         presence_state="zuhause",
         radio_station="gayfm",
         homepods_state="idle",
+        homepods_stably_idle=True,
         day_state="afternoon",
     ))
+    assert d.action == C.ACTION_START_RADIO
+    assert d.music_baseline_active is True
+    assert d.volume_policy == C.VOL_POLICY_MEDIA
+    assert d.volume_target_homepods and d.volume_target_homepods > 0
+
+
+def test_baseline_not_without_debounce():
+    # Ohne stabiles Idle-Fenster (Restore-Flap/Track-Gap) → KEIN Start (kein Churn).
+    d, _ = _decide(_inp(
+        presence_state="zuhause", radio_station="gayfm",
+        homepods_state="idle", homepods_stably_idle=False,
+    ))
     assert d.action == C.ACTION_NONE
-    assert d.volume_policy == C.VOL_POLICY_IDLE
-    assert d.volume_target_homepods == 0.0
+    assert d.music_baseline_active is False
 
 
-def test_manual_stop_stays_idle_at_home():
-    # Manuell gestoppt (Latch) → zuhause idle bleibt idle, kein Auto-Start.
-    # Szenario bleibt die Musik-Baseline (Desired-Truth), aber nichts spielt.
+def test_baseline_suppressed_during_wake_needed():
+    # Wake-Gate (FLEET-246): wake_needed → die Wake-Sequenz besitzt den Start,
+    # Baseline schweigt (sonst MA-Lock-Doppelzündung).
+    d, _ = _decide(_inp(
+        presence_state="zuhause", radio_station="gayfm",
+        homepods_state="idle", homepods_stably_idle=True, wake_needed=True,
+    ))
+    assert d.action == C.ACTION_NONE
+    assert d.music_baseline_active is False
+
+
+def test_baseline_suppressed_while_bio_waking():
+    # Wake-Gate: bio_state=waking ist ebenfalls das Wake-Fenster → Baseline still.
+    d, _ = _decide(_inp(
+        presence_state="zuhause", radio_station="gayfm",
+        homepods_state="idle", homepods_stably_idle=True, bio_state="waking",
+    ))
+    assert d.action == C.ACTION_NONE
+    assert d.music_baseline_active is False
+
+
+def test_baseline_not_when_tv():
+    # „Nicht bei TV": TV-Stack → owner tv_denon → keine Baseline, auch stabil idle.
+    d, _ = _decide(_inp(
+        context=C.CTX_TV, presence_state="zuhause", radio_station="gayfm",
+        homepods_state="idle", homepods_stably_idle=True,
+    ))
+    assert d.action != C.ACTION_START_RADIO
+    assert d.music_baseline_active is False
+
+
+def test_manual_stop_blocks_baseline():
+    # Manuell gestoppt → auch bei stabil idle KEIN Auto-Start (bis zum Wecken).
     d, _ = _decide(_inp(
         presence_state="zuhause",
         radio_station="gayfm",
         homepods_state="idle",
+        homepods_stably_idle=True,
         media_stop_latch=True,
     ))
     assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
     assert d.action == C.ACTION_NONE
+    assert d.music_baseline_active is False
     assert d.volume_policy == C.VOL_POLICY_IDLE
     assert d.volume_target_homepods == 0.0
 
 
 def test_unknown_presence_holds_does_not_start_when_idle():
-    # unknown (z.B. kurzer Reload-Flap) darf idle NICHT zwangs-starten.
+    # unknown (z.B. kurzer Reload-Flap) darf idle NICHT zwangs-starten — auch
+    # nicht mit erfülltem Idle-Debounce (presence_holds_resume blockt).
     d, _ = _decide(_inp(presence_state="unknown", radio_station="gayfm",
-                        homepods_state="idle"))
+                        homepods_state="idle", homepods_stably_idle=True))
     assert d.action == C.ACTION_NONE
+    assert d.music_baseline_active is False
 
 
 def test_unknown_presence_does_not_pause_playing_music():

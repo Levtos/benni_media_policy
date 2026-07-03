@@ -14,11 +14,13 @@ Apply-Layer (benni_media_apply) prüft beide.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.event import (
+    async_call_later,
     async_track_state_change_event,
     async_track_time_change,
 )
@@ -82,6 +84,11 @@ from .storage import make_matrix_store
 
 _LOGGER = logging.getLogger(__name__)
 
+# Musik-Baseline: HomePods müssen so lange stabil NICHT spielen, bevor die
+# Baseline den Radio-Stream (neu) startet. Überbrückt den Restore-Flap nach
+# HA-Neustart (~10 s) und Track-/Sender-Gaps → kein Churn, aber Recovery.
+BASELINE_IDLE_DEBOUNCE_SECONDS = 30.0
+
 _TRUE = frozenset({"on", "true", "1", "home", "active", "playing", "open"})
 
 
@@ -122,6 +129,11 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # FLEET-102 Stage B: persistenter Volume-Matrix-Override (Store).
         self._matrix_store = make_matrix_store(hass, entry.entry_id)
         self._matrix_override: dict[str, Any] = {}
+        # Musik-Baseline-Debounce: monotone Startzeit des aktuellen „HomePods
+        # nicht am Spielen"-Fensters + One-Shot-Timer, der am Debounce-Punkt
+        # einen Recompute auslöst (Coordinator ist sonst event-getrieben).
+        self._homepods_idle_since: float | None = None
+        self._baseline_timer: CALLBACK_TYPE | None = None
 
     # ----- profile / binding -----
     @property
@@ -274,6 +286,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass, self._on_time_tick, hour=9, minute=0, second=0
         )
         self.entry.async_on_unload(self._unsub_time)
+        self.entry.async_on_unload(self._cancel_baseline_timer)
 
     @callback
     def _on_state_change(self, _event: Event) -> None:
@@ -334,6 +347,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             away_gate=_opt_bool(self._state(CONF_AWAY_GATE)),
             homepods_state=self._state(CONF_HOMEPODS),
             homepods_configured=bool(self._entity_id(CONF_HOMEPODS)),
+            homepods_stably_idle=self._homepods_stably_idle(),
             denon_configured=bool(self._entity_id(CONF_DENON)),
             denon_active=_bool(self._state(CONF_DENON_ACTIVE))
             or self._state(CONF_DENON) in ("on", "playing"),
@@ -354,7 +368,49 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             boost_suppressed=self._boost_suppressed,
         )
 
+    def _track_homepods_idle(self) -> None:
+        """HomePods-„nicht am Spielen"-Fenster nachführen + One-Shot-Recompute am
+        Debounce-Punkt planen. `playing` setzt zurück, alles andere startet das
+        Fenster (falls neu) und armt den Timer."""
+        now = time.monotonic()
+        if self._state(CONF_HOMEPODS) == "playing":
+            self._homepods_idle_since = None
+            self._cancel_baseline_timer()
+        elif self._homepods_idle_since is None:
+            self._homepods_idle_since = now
+            self._arm_baseline_timer()
+
+    @callback
+    def _arm_baseline_timer(self) -> None:
+        self._cancel_baseline_timer()
+        self._baseline_timer = async_call_later(
+            self.hass, BASELINE_IDLE_DEBOUNCE_SECONDS + 0.5, self._on_baseline_tick
+        )
+
+    @callback
+    def _cancel_baseline_timer(self) -> None:
+        if self._baseline_timer is not None:
+            self._baseline_timer()
+            self._baseline_timer = None
+
+    @callback
+    def _on_baseline_tick(self, _now) -> None:
+        # Am Debounce-Punkt einmal neu rechnen → Baseline greift jetzt, falls die
+        # HomePods weiterhin stabil idle sind. Re-Arm, bis sie spielen (robust
+        # gegen ein einzeln verschlucktes start_radio).
+        self._baseline_timer = None
+        if self._homepods_idle_since is not None:
+            self._arm_baseline_timer()
+        self.async_set_updated_data(self._compute())
+
+    def _homepods_stably_idle(self) -> bool:
+        return (
+            self._homepods_idle_since is not None
+            and (time.monotonic() - self._homepods_idle_since) >= BASELINE_IDLE_DEBOUNCE_SECONDS
+        )
+
     def _compute(self) -> dict[str, Any]:
+        self._track_homepods_idle()
         # R22: Boost-Reset gilt nur für den aktuell geboosteten Track. Sperre hebt
         # sich auf bei (a) Trackwechsel (media_content_id/title ändert sich) oder
         # (b) Verlassen des Boost-Enums — fail-safe, falls der Player keinen Titel
@@ -385,6 +441,7 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         dbg["volume_formula"] = logic.volume_breakdown(
             inp, dbg.get("audio_owner", "none"), bool(dbg.get("is_grind", False)),
             self.settings(), dbg.get("audio_scenario"),
+            bool(dbg.get("music_baseline_active", False)),
         )
         dbg["reasons"] = logic.structured_reasons(dbg)
         dbg["bindings"] = self.bindings()
