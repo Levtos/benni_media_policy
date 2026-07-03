@@ -41,6 +41,7 @@ from .const import (
     AUDIO_OWNER_HOMEPODS,
     AUDIO_OWNER_NONE,
     AUDIO_OWNER_PRIVATE,
+    AUDIO_OWNER_SLEEP,
     AUDIO_OWNER_TV_DENON,
     AUDIO_SCENARIO_GAMING,
     AUDIO_SCENARIO_LABELS,
@@ -231,14 +232,22 @@ class PolicyDecision:
 # --------------------------------------------------------------------------- #
 def decide_owner(inp: Inputs) -> tuple[str, str]:
     """audio_owner + Label aus dem Context. Priorität wie Lastenheft:
-    private_time > gaming > streaming/tv > homepods > none.
+    sleep > private_time > gaming > streaming/tv > homepods > none.
+
+    FLEET-221: `bio_sleep` bekommt den EIGENEN Owner `sleep` (nicht mehr
+    `private_stack`). Beide verdrängen die HomePods (competes) und ergeben
+    Szenario off, aber Schlaf ≠ Privat-Session — das gemeinsame Label führte in
+    die Irre (owner=private_stack über Nacht ohne Stash). Reine Benennung, kein
+    Routing-Impact (bio_sleep → decide_volume MUTED, decide_action pause).
 
     WICHTIG (FLEET-81 / FLEET-31): `quiet_mode` gehört hier NICHT rein. Quiet (Tür/
     Anruf, R20) ist ein reines Volume-Overlay (decide_volume duckt auf ducked_target),
     KEIN Owner/Szenario. Früher koppelte quiet→PRIVATE → competes → pause_homepods
     UND hp_plays=False → Ducked-HomePods=0.0 statt 0.10 (= „Wiedergabe komplett
-    gestoppt"). bio_sleep bleibt (R25: HomePods aus), CTX_PRIVATE ist das echte Szenario."""
-    if inp.bio_sleep or inp.context == CTX_PRIVATE:
+    gestoppt"). CTX_PRIVATE ist das echte Privat-Szenario."""
+    if inp.bio_sleep:
+        return AUDIO_OWNER_SLEEP, "sleep"
+    if inp.context == CTX_PRIVATE:
         return AUDIO_OWNER_PRIVATE, "private_time"
     if inp.context == CTX_GAMING:
         return AUDIO_OWNER_GAMING, f"gaming_{inp.device or 'unknown'}"
@@ -315,10 +324,16 @@ def is_pc_gaming(inp: Inputs) -> bool:
 def competes_with_homepods(owner: str, grind: bool, pc_gaming: bool = False) -> bool:
     """Stack, der die HomePods verdrängt. GRIND hat HomePods-Anteil (R15) →
     konkurriert NICHT, HomePods spielen weiter. PC-Gaming (FLEET-101) ebenso:
-    Game-Audio ist im Headset, Raum-Musik läuft weiter."""
+    Game-Audio ist im Headset, Raum-Musik läuft weiter. Sleep (FLEET-221) zählt
+    wie private: HomePods pausieren beim Einschlafen (R25)."""
     if grind or pc_gaming:
         return False
-    return owner in (AUDIO_OWNER_PRIVATE, AUDIO_OWNER_GAMING, AUDIO_OWNER_TV_DENON)
+    return owner in (
+        AUDIO_OWNER_SLEEP,
+        AUDIO_OWNER_PRIVATE,
+        AUDIO_OWNER_GAMING,
+        AUDIO_OWNER_TV_DENON,
+    )
 
 
 # --------------------------------------------------------------------------- #

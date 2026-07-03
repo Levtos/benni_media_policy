@@ -41,13 +41,26 @@ def test_owner_gaming():
     assert d.audio_owner == C.AUDIO_OWNER_GAMING
 
 
-def test_owner_private_via_context_and_bio_not_quiet():
-    # private_time-Szenario + bio_sleep → PRIVATE; quiet_mode allein NICHT (FLEET-81:
-    # Quiet ist Volume-Overlay, kein Owner — koppelte früher fälschlich → pause).
+def test_owner_private_via_context_sleep_separate_not_quiet():
+    # FLEET-221: private_time-Context → PRIVATE, bio_sleep → eigener SLEEP-Owner
+    # (nicht mehr private_stack); quiet_mode allein NICHT (FLEET-81: Quiet ist
+    # Volume-Overlay, kein Owner — koppelte früher fälschlich → pause).
     assert _decide(_inp(context=C.CTX_PRIVATE))[0].audio_owner == C.AUDIO_OWNER_PRIVATE
-    assert _decide(_inp(bio_sleep=True))[0].audio_owner == C.AUDIO_OWNER_PRIVATE
+    assert _decide(_inp(bio_sleep=True))[0].audio_owner == C.AUDIO_OWNER_SLEEP
     # Quiet bei spielenden HomePods → Owner bleibt HOMEPODS (kein PRIVATE/pause).
     assert _decide(_inp(quiet_mode=True, homepods_state="playing"))[0].audio_owner == C.AUDIO_OWNER_HOMEPODS
+
+
+def test_sleep_owner_still_competes_and_mutes():
+    # FLEET-221: das neue SLEEP-Label ändert das Verhalten NICHT — HomePods
+    # pausieren beim Einschlafen (competes) und Volume ist gemutet (R25).
+    d, _ = _decide(_inp(bio_sleep=True, homepods_state="playing"))
+    assert d.audio_owner == C.AUDIO_OWNER_SLEEP
+    assert d.owner_reason == "sleep"
+    assert d.action == C.ACTION_PAUSE
+    assert d.homepods_should_pause is True
+    assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
+    assert d.volume_policy == C.VOL_POLICY_MUTED
 
 
 def test_quiet_ducks_homepods_not_pause_fleet81():

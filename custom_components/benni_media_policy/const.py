@@ -67,6 +67,10 @@ AUDIO_OWNER_HOMEPODS: Final = "homepods"
 AUDIO_OWNER_TV_DENON: Final = "tv_denon"
 AUDIO_OWNER_GAMING: Final = "gaming_stack"
 AUDIO_OWNER_PRIVATE: Final = "private_stack"
+# FLEET-221: Schlaf ist ein eigener Owner, NICHT „private_stack" (Privat-Session
+# via context/stash). Beide verdrängen die HomePods (competes) + Szenario off,
+# aber getrennt benannt fürs Cockpit (bio_sleep vs. echtem private_time).
+AUDIO_OWNER_SLEEP: Final = "sleep"
 
 ACTION_NONE: Final = "none"
 ACTION_PAUSE: Final = "pause_homepods"
