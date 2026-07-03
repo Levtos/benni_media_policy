@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.16.0 - Musik-Baseline zurück, mit Wake-Gate (FLEET-246)
+
+- **Baseline wieder da als Idle-Resume-Sicherheitsnetz.** Die Entfernung in
+  v0.15.0 war zu aggressiv: der `pre_pause_mode`-Resume deckt nur „Musik lief →
+  Screen unterbrach → Screen endet" ab, und nur wenn die Resume-Erinnerung sauber
+  erfasst wurde. Geht sie verloren (Grind-Flip, Stream-Abriss, oder Musik war
+  schon aus als der Screen kam), bleibt es still — live erlebt: nach PS5-Aus
+  startete keine Musik. Zurück: `music_baseline_candidate` + `homepods_stably_idle`
+  (30 s-Coordinator-Debounce), `music_baseline_active` im Debug.
+- **Neu: Wake-Gate** (`_wake_sequence_active`) — die Baseline schweigt, solange
+  `wake_needed=on` ODER `bio_state=waking`. Das war der EINZIGE echte Grund fürs
+  frühere Entfernen: morgens feuerten Baseline UND Wake-Sequenz beide `start_radio`
+  → Music-Assistant-Playback-Lock-Contention. Jetzt besitzt im Wake-Fenster allein
+  die Wake-Sequenz den Start; tagsüber ist die Baseline das Netz.
+- Verhalten: `owner==none` + zuhause + wach + kein Screen + HomePods stabil idle +
+  nicht quiet/sleep/manual-stop/unknown/wake → `start_radio`. 96 Tests grün.
+
 ## 0.15.1 - audio_owner: Schlaf ≠ private_stack (FLEET-221)
 
 - **`bio_sleep` bekommt einen eigenen Owner `sleep`** statt `private_stack`.
