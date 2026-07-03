@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.15.1 - audio_owner: Schlaf ≠ private_stack (FLEET-221)
+
+- **`bio_sleep` bekommt einen eigenen Owner `sleep`** statt `private_stack`.
+  Bisher teilten sich Schlaf und Privat-Session (context/stash) das Label
+  `AUDIO_OWNER_PRIVATE = "private_stack"` → über Nacht stand `audio_owner` auf
+  `private_stack`, obwohl keine Stash-/Private-Session lief (nur `bio_state=sleep`
+  ab dem Zubettgehen). Das führte in die Irre.
+- **Reine Benennung, kein Verhaltens-Impact:** Sleep verdrängt weiter die
+  HomePods (`competes_with_homepods` enthält jetzt `AUDIO_OWNER_SLEEP`), das
+  Szenario bleibt `off` und die Volume-Policy `muted` (R25). Cockpit/Umbrella
+  zeigen jetzt `sleep` statt `private_stack` im Schlaf.
+- `owner_reason` für Schlaf = `"sleep"` (vorher `"private_time"`). 92 Tests grün.
+
 ## 0.15.0 - Musik-Baseline entfernt (Wurzel-Kur statt Recovery-Hack)
 
 - **Debouncte Musik-Baseline komplett raus** (`music_baseline_candidate`,
