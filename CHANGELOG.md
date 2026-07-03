@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.15.0 - Musik-Baseline entfernt (Wurzel-Kur statt Recovery-Hack)
+
+- **Debouncte Musik-Baseline komplett raus** (`music_baseline_candidate`,
+  `homepods_stably_idle`, der 30 s-Coordinator-Debounce + One-Shot-Timer, das
+  `music_baseline_active`-Debug-Feld). Ihr einziger Zweck war, den nach
+  HA-Neustart abgerissenen HomePods-Stream zurückzuholen. Dieser Abriss ist seit
+  **media_apply v0.15.2** am Ursprung weg: Apply pausiert nicht mehr auf
+  `presence_unknown` (Reload-Flap) → der Stream überlebt Neustarts, es gibt
+  nichts mehr zu „recovern".
+- **Warum raus statt lassen:** die Baseline war am Morgen eine **zweite**
+  `start_radio`-Quelle neben der Wake-Sequenz → beide feuerten quasi gleichzeitig
+  auf Music Assistant → Playback-Lock-Contention (MA-Timeout, ~30 s idle↔playing-
+  Flapperei = kaputte Weckmusik). Ohne Baseline feuert nur noch die Wake-Sequenz.
+- **Verhalten jetzt:** Musik startet ausschließlich über echte Trigger — Wecken
+  (R23), Heimkehr-Resume (`pre_pause_mode`), TV-aus-Resume. Kalt-Idle zuhause
+  startet NICHT von selbst (kam real nie vor — immer über einen Trigger).
+- `decide_action`/`decide_volume`/`volume_breakdown` verlieren den
+  `music_baseline`-Parameter; WS-`status`/`debug` das `music_baseline_active`-Feld
+  (von Umbrella/Apply/Frontend nicht konsumiert → kein Contract-Bruch). 91 Tests
+  grün.
+
 ## 0.14.1 - manual_stop nur noch explizit (Stream-Abriss ≠ Stopp)
 
 - **Kritischer Fix zur Baseline (v0.14.0).** `manual_stop` wurde aus jedem
