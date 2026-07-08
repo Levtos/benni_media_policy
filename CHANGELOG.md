@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.16.1 - system_-Slugs für Media-Presence/Away-Gate (FLEET-260)
+
+- **Fix falsche Bindungen (renamed-device `system_` Entity-IDs).** Die Defaults
+  für `presence_state` und `away_gate` zeigten auf clean-Slugs, die live nie
+  existierten:
+  - `sensor.benni_media_state_presence_state` → `presence_state` löste zu `None`
+    auf (`presence_degraded=True`).
+  - `binary_sensor.benni_media_state_away_gate` → `away_gate` löste zu `None` auf,
+    der explizite Away-Block konnte nie feuern.
+- PREFILL zeigt jetzt auf die live existierenden `system_`-Slugs
+  (`sensor.system_benni_media_state_presence_state`,
+  `binary_sensor.system_benni_media_state_away_gate`).
+- `LEGACY_ENTITY_MAP` repointet die alten clean-Slugs auf die `system_`-Slugs →
+  gebackene `entry.data`/`options`-Werte werden beim Setup automatisch migriert.
+- **Keine Policy-Semantik geändert.** Kein Media-State-/Core-State-Change.
+
 ## 0.16.0 - Musik-Baseline zurück, mit Wake-Gate (FLEET-246)
 
 - **Baseline wieder da als Idle-Resume-Sicherheitsnetz.** Die Entfernung in

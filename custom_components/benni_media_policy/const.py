@@ -216,8 +216,10 @@ PROFILE_PREFILL: Final[dict[str, dict[str, Any]]] = {
         CONF_ENTERTAINMENT_ACTIVE: "binary_sensor.benni_media_state_entertainment_active",
         CONF_HEADSET_ACTIVE: "binary_sensor.benni_media_state_headset_active",
         CONF_QUIET_MODE: "binary_sensor.benni_media_state_quiet_mode",
-        CONF_PRESENCE_STATE: "sensor.benni_media_state_presence_state",
-        CONF_AWAY_GATE: "binary_sensor.benni_media_state_away_gate",
+        # Live existiert (renamed-device, system_-Präfix) NUR der system_-Slug —
+        # der clean slug existierte nie → presence_degraded / toter Away-Block.
+        CONF_PRESENCE_STATE: "sensor.system_benni_media_state_presence_state",
+        CONF_AWAY_GATE: "binary_sensor.system_benni_media_state_away_gate",
         # eigene Geräte/Inputs:
         CONF_HOMEPODS: "media_player.living_homepods_ma_group",
         CONF_DENON: "media_player.living_denon",
@@ -247,6 +249,10 @@ LEGACY_ENTITY_MAP: Final[dict[str, str]] = {
     "binary_sensor.living_denon_plug_power_active_atomic": "sensor.benni_master_denon",
     "sensor.benni_device_living_avr": "sensor.benni_master_denon",
     "binary_sensor.opening_any_open_combined": CORE_OPENINGS_MASTER_ENTITY,
+    # Renamed-device (system_) Entity-ID-Fix: media_states presence_state/away_gate
+    # existieren live nur als system_-Slug; alte gebackene clean-Slugs repointen.
+    "sensor.benni_media_state_presence_state": "sensor.system_benni_media_state_presence_state",
+    "binary_sensor.benni_media_state_away_gate": "binary_sensor.system_benni_media_state_away_gate",
 }
 
 # --------------------------------------------------------------------------- #
