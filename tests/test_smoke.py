@@ -55,3 +55,43 @@ def test_opening_prefill_and_migrations_use_master_contract():
         const.LEGACY_ENTITY_MAP["binary_sensor.opening_any_open_combined"]
         == const.CORE_OPENINGS_MASTER_ENTITY
     )
+
+
+def test_media_presence_and_away_gate_use_system_slugs():
+    """FLEET-260: presence_state/away_gate binden auf die live system_-Slugs."""
+    prefill = const.PROFILE_PREFILL[const.PROFILE_BENNI]
+
+    # Default-PREFILL zeigt auf die live existierenden system_-Slugs.
+    assert (
+        prefill[const.CONF_PRESENCE_STATE]
+        == "sensor.system_benni_media_state_presence_state"
+    )
+    assert (
+        prefill[const.CONF_AWAY_GATE]
+        == "binary_sensor.system_benni_media_state_away_gate"
+    )
+
+    # Legacy clean-Slugs werden auf die system_-Slugs repointet.
+    assert (
+        const.LEGACY_ENTITY_MAP["sensor.benni_media_state_presence_state"]
+        == "sensor.system_benni_media_state_presence_state"
+    )
+    assert (
+        const.LEGACY_ENTITY_MAP["binary_sensor.benni_media_state_away_gate"]
+        == "binary_sensor.system_benni_media_state_away_gate"
+    )
+
+    # Domain bleibt korrekt (sensor bleibt sensor, binary_sensor bleibt binary_sensor).
+    assert prefill[const.CONF_PRESENCE_STATE].startswith("sensor.")
+    assert prefill[const.CONF_AWAY_GATE].startswith("binary_sensor.")
+
+
+def test_migration_repoints_only_known_legacy_values():
+    """Der value-basierte Repoint fasst nur bekannte Legacy-IDs an (keine gültigen)."""
+    m = const.LEGACY_ENTITY_MAP
+    # bekannte Legacy-IDs → gemappt
+    assert "sensor.benni_media_state_presence_state" in m
+    assert "binary_sensor.benni_media_state_away_gate" in m
+    # eine explizit gesetzte, gültige Fremd-Entity bleibt unberührt (nicht in der Map)
+    assert "sensor.custom_presence_state" not in m
+    assert "sensor.system_benni_media_state_presence_state" not in m  # kein Selbst-Loop
