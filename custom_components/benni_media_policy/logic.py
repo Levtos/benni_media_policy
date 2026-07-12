@@ -55,6 +55,8 @@ from .const import (
     CTX_STREAMING,
     CTX_TV,
     DEFAULT_GRIND_DENON_OFFSET,
+    DEFAULT_GRIND_HOMEPODS_OFFSET,
+    DEFAULT_PRIVATE_DENON_CAP,
     DEFAULT_VOL_ACTIVE_MIN,
     DEFAULT_VOL_BOOST_OFFSET,
     DEFAULT_VOL_DENON_BASE,
@@ -63,6 +65,8 @@ from .const import (
     DEFAULT_VOL_HOMEPODS_BASE,
     DEFAULT_VOL_HOMEPODS_MAX,
     DEFAULT_VOL_OPENING_OFFSET,
+    DEFAULT_VOL_OPENING_OFFSET_DENON,
+    DEFAULT_VOL_OPENING_OFFSET_HOMEPODS,
     DENON_BASELINES,
     DEV_DENON,
     DEV_PC,
@@ -152,9 +156,16 @@ class VolumeSettings:
     homepods_max: float = DEFAULT_VOL_HOMEPODS_MAX
     denon_max: float = DEFAULT_VOL_DENON_MAX
     active_min: float = DEFAULT_VOL_ACTIVE_MIN
-    opening_offset: float = DEFAULT_VOL_OPENING_OFFSET   # R17 fenster_offset
+    opening_offset: float = DEFAULT_VOL_OPENING_OFFSET   # Legacy (Migrationsquelle)
+    # control#3: Fenster-Offset je Gerät (gekippt == offen; geschlossen = 0).
+    opening_offset_homepods: float = DEFAULT_VOL_OPENING_OFFSET_HOMEPODS
+    opening_offset_denon: float = DEFAULT_VOL_OPENING_OFFSET_DENON
     boost_offset: float = DEFAULT_VOL_BOOST_OFFSET       # R18 Track-Boost
+    # control#3: Grind-Offset je Gerät (HomePods 0, Denon −0.10).
+    grind_homepods_offset: float = DEFAULT_GRIND_HOMEPODS_OFFSET
     grind_denon_offset: float = DEFAULT_GRIND_DENON_OFFSET  # R17 szenario_offset (Grind)
+    # control#3: Private-Time-Denon-Cap (Ceiling; min(normal, cap), Nudge-fest).
+    private_denon_cap: float = DEFAULT_PRIVATE_DENON_CAP
     # FLEET-102 Volume-Matrix (Stage A): tabellarische Summanden, data-driven.
     # Base = per-Tagesphase (Lastenheft §6). scenario_off/activity_off seeded leer
     # → Lookup .get(key, 0.0) = 0.0 ⇒ verhaltensgleich, bis Stage C sie füllt.
@@ -608,7 +619,11 @@ def decide_volume(
     else:  # NONE
         hp_plays, dn_plays = False, False
 
-    fenster = s.opening_offset if inp.opening_any_open else 0.0
+    # control#3: Fenster-Offset je Gerät (gekippt == offen; geschlossen = 0).
+    # opening_any_open kommt aus dem dreistufigen core_devices-Master (any_not_
+    # closed = gekippt ODER offen) — kein neuer binärer Sensor.
+    win_hp = s.opening_offset_homepods if inp.opening_any_open else 0.0
+    win_dn = s.opening_offset_denon if inp.opening_any_open else 0.0
 
     # 3. Ducked: quiet mode (R20 — hart auf ducked_target für aktive Seite[n]).
     if inp.quiet_mode:
@@ -639,8 +654,10 @@ def decide_volume(
         else:
             hp = _assemble(
                 _baseline(inp.day_state, s.base_homepods, s.homepods_base),
-                szenario_off=s.scenario_off_homepods.get(scenario, 0.0),
-                fenster_off=fenster,
+                # GRIND: eigener HomePods-Grind-Offset (Default 0 → normal).
+                szenario_off=(s.grind_homepods_offset if grind else 0.0)
+                + s.scenario_off_homepods.get(scenario, 0.0),
+                fenster_off=win_hp,
                 kontext_off=s.activity_off_homepods.get(inp.activity_context, 0.0),
                 manual_off=inp.manual_nudge,
                 boost=s.boost_offset if boost_flag else 0.0,
@@ -655,12 +672,17 @@ def decide_volume(
                 _baseline(inp.day_state, s.base_denon, s.denon_base),
                 szenario_off=(s.grind_denon_offset if grind else 0.0)
                 + s.scenario_off_denon.get(scenario, 0.0),
-                fenster_off=fenster,
+                fenster_off=win_dn,
                 kontext_off=s.activity_off_denon.get(inp.activity_context, 0.0),
                 manual_off=inp.manual_nudge,
                 boost=0.0,
                 active_min=s.active_min, hard_max=s.denon_max,
             )
+            # control#3: Private-Time-Denon-Cap. Ceiling NACH der additiven Formel
+            # (inkl. Nudge) → ein positiver Nudge kann den Cap nicht überfahren.
+            # min() hebt einen bereits niedrigeren Wert nie an.
+            if owner == AUDIO_OWNER_PRIVATE:
+                dn = round(min(dn, _clamp(s.private_denon_cap, 0.0, s.denon_max)), 3)
     if music_baseline:
         reason = "music_baseline_homepods"
     elif pc_gaming:
@@ -693,38 +715,51 @@ def volume_breakdown(
         hp_plays, dn_plays = False, True
     else:
         hp_plays, dn_plays = False, False
-    fenster = s.opening_offset if inp.opening_any_open else 0.0
     boost_flag = hp_plays and boost_active(inp)
+    is_private = owner == AUDIO_OWNER_PRIVATE
 
     nudge = inp.manual_nudge
-    def comp(base: float, szen: float, act: float, plays: bool, hard_max: float, boost: float) -> dict[str, Any]:
-        win = fenster if plays else 0.0
+    def comp(
+        base: float, szen: float, act: float, plays: bool, hard_max: float,
+        boost: float, window: float, cap: Optional[float] = None,
+    ) -> dict[str, Any]:
+        win = window if plays else 0.0
         man = nudge if plays else 0.0
         kontext = act if plays else 0.0
         result = _assemble(
             base, szenario_off=szen, fenster_off=win, kontext_off=kontext,
             manual_off=man, boost=boost, active_min=s.active_min, hard_max=hard_max,
         ) if plays else 0.0
-        return {
+        out = {
             "base": round(base, 3), "scenario_offset": round(szen, 3),
             "window_offset": round(win, 3), "activity_offset": round(kontext, 3),
             "manual_nudge": round(man, 3), "track_boost": round(boost, 3),
             "result": result, "plays": plays,
         }
+        # control#3: Private-Time-Cap sichtbar machen (normal / cap / effektiv).
+        if cap is not None and plays:
+            capped = round(min(result, _clamp(cap, 0.0, hard_max)), 3)
+            out["cap"] = round(cap, 3)
+            out["cap_active"] = capped < result
+            out["effective"] = capped
+        return out
 
     return {
         "homepods": comp(
             _baseline(inp.day_state, s.base_homepods, s.homepods_base),
-            s.scenario_off_homepods.get(scenario, 0.0),
+            (s.grind_homepods_offset if grind else 0.0)
+            + s.scenario_off_homepods.get(scenario, 0.0),
             s.activity_off_homepods.get(inp.activity_context, 0.0),
             hp_plays, s.homepods_max, s.boost_offset if boost_flag else 0.0,
+            s.opening_offset_homepods,
         ),
         "denon": comp(
             _baseline(inp.day_state, s.base_denon, s.denon_base),
             (s.grind_denon_offset if grind else 0.0)
             + s.scenario_off_denon.get(scenario, 0.0),
             s.activity_off_denon.get(inp.activity_context, 0.0),
-            dn_plays, s.denon_max, 0.0,
+            dn_plays, s.denon_max, 0.0, s.opening_offset_denon,
+            s.private_denon_cap if is_private else None,
         ),
     }
 

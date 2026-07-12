@@ -257,7 +257,7 @@ def test_grind_homepods_play_denon_kulisse():
     d, _ = _decide(_inp(context=C.CTX_GAMING, subcontext=C.SUB_GAME_GRIND))
     # HomePods auf Normal-Niveau, Denon Basis + negativer Offset.
     assert d.volume_target_homepods == 0.35
-    assert d.volume_target_denon == 0.28  # 0.40 - 0.12
+    assert d.volume_target_denon == 0.30  # 0.40 - 0.10 (control#3: Grind-Denon -0.10)
     assert d.volume_policy == C.VOL_POLICY_MEDIA
 
 
@@ -539,7 +539,7 @@ def test_music_mute_does_not_touch_denon_in_grind():
     d, _ = _decide(_inp(context=C.CTX_GAMING, subcontext=C.SUB_GAME_GRIND,
                         day_state="afternoon", homepods_music_enum=C.MUSIC_ENUM_MUTE))
     assert d.volume_target_homepods == 0.0
-    assert d.volume_target_denon == 0.18  # 0.30 - 0.12
+    assert d.volume_target_denon == 0.20  # 0.30 - 0.10 (control#3: Grind-Denon -0.10)
 
 
 # ----------------------------------------------------- R21/R22 Nudge + Boost-Reset
@@ -805,3 +805,77 @@ def test_entertainment_false_with_away_does_not_keep_music_running():
                         homepods_state="playing"))
     assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
     assert d.action == C.ACTION_PAUSE
+
+
+# ------------------------------- control#3: per-Gerät Grind/Fenster + Private-Cap
+def _settings(**kw):
+    return L.VolumeSettings(**kw)
+
+
+def test_grind_homepods_offset_default_zero():
+    # HomePods-Grind-Offset Default 0 → HomePods bleiben auf Normal-Baseline.
+    d, _ = _decide(_inp(context=C.CTX_GAMING, subcontext=C.SUB_GAME_GRIND,
+                        day_state="afternoon"))
+    assert d.volume_target_homepods == 0.45  # afternoon baseline, +0
+
+
+def test_grind_homepods_offset_configurable():
+    s = _settings(grind_homepods_offset=-0.05)
+    d, _ = _decide(_inp(context=C.CTX_GAMING, subcontext=C.SUB_GAME_GRIND,
+                        day_state="afternoon"), settings=s)
+    assert d.volume_target_homepods == 0.40  # 0.45 - 0.05
+
+
+def test_grind_denon_offset_configurable():
+    s = _settings(grind_denon_offset=-0.15)
+    d, _ = _decide(_inp(context=C.CTX_GAMING, subcontext=C.SUB_GAME_GRIND,
+                        day_state="afternoon"), settings=s)
+    assert d.volume_target_denon == 0.15  # 0.30 - 0.15
+
+
+def test_window_per_device_separate():
+    # Fenster offen: HP und Denon eigene Offsets.
+    s = _settings(opening_offset_homepods=-0.10, opening_offset_denon=-0.05)
+    d, _ = _decide(_inp(homepods_state="playing", day_state="afternoon",
+                        opening_any_open=True), settings=s)
+    assert d.volume_target_homepods == 0.35  # 0.45 - 0.10
+    d2, _ = _decide(_inp(context=C.CTX_TV, day_state="afternoon",
+                         opening_any_open=True), settings=s)
+    assert d2.volume_target_denon == 0.25  # 0.30 - 0.05
+
+
+def test_window_closed_no_offset():
+    s = _settings(opening_offset_homepods=-0.10, opening_offset_denon=-0.05)
+    d, _ = _decide(_inp(homepods_state="playing", day_state="afternoon",
+                        opening_any_open=False), settings=s)
+    assert d.volume_target_homepods == 0.45  # kein Abzug
+
+
+def test_private_denon_cap_limits():
+    # Private routet auf Denon; Cap begrenzt den berechneten Wert.
+    s = _settings(private_denon_cap=0.15)
+    d, _ = _decide(_inp(context=C.CTX_PRIVATE, day_state="afternoon"), settings=s)
+    # normal wäre 0.30 (afternoon), Cap 0.15 → effektiv 0.15
+    assert d.volume_target_denon == 0.15
+
+
+def test_private_denon_cap_does_not_raise_lower_value():
+    # Ist der normale Wert kleiner als der Cap, bleibt er (min, kein Anheben).
+    s = _settings(private_denon_cap=0.50)
+    d, _ = _decide(_inp(context=C.CTX_PRIVATE, day_state="afternoon"), settings=s)
+    assert d.volume_target_denon == 0.30  # < Cap → unverändert
+
+
+def test_private_denon_cap_nudge_proof():
+    # Ein positiver Nudge darf den Cap NICHT überfahren.
+    s = _settings(private_denon_cap=0.15)
+    d, _ = _decide(_inp(context=C.CTX_PRIVATE, day_state="afternoon",
+                        manual_nudge=0.30), settings=s)
+    assert d.volume_target_denon == 0.15
+
+
+def test_private_cap_only_affects_denon_path():
+    # Cap gilt nur im Private-Owner (Denon-Pfad), nicht für andere Owner.
+    s = _settings(private_denon_cap=0.15)
+    d, _ = _decide(_inp(context=C.CTX_TV, day_state="afternoon"), settings=s)
+    assert d.volume_target_denon == 0.30  # TV-Owner, kein Private-Cap

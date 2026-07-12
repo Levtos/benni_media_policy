@@ -63,7 +63,11 @@ from .const import (
     CONF_VOL_HOMEPODS_BASE,
     CONF_VOL_HOMEPODS_MAX,
     CONF_VOL_OPENING_OFFSET,
+    CONF_VOL_OPENING_OFFSET_DENON,
+    CONF_VOL_OPENING_OFFSET_HOMEPODS,
     CONF_GRIND_DENON_OFFSET,
+    CONF_GRIND_HOMEPODS_OFFSET,
+    CONF_PRIVATE_DENON_CAP,
     CORE_OPENINGS_MASTER_ENTITY,
     CORE_OPENINGS_MEDIA_ATTRIBUTE,
     DAY_PHASES,
@@ -180,6 +184,16 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except (TypeError, ValueError):
                 return VOL_SETTING_DEFAULTS[key]
 
+        def _win(device_key: str) -> float:
+            """control#3 Fenster-Migration: per-Gerät explizit ▶ Legacy-Skalar
+            (volume_opening_offset) ▶ Default. Alte Configs mit dem einen
+            opening_offset erben ihn additiv auf beide Geräte (kein Reset)."""
+            if device_key in self._opts:
+                return _f(device_key)
+            if CONF_VOL_OPENING_OFFSET in self._opts:
+                return _f(CONF_VOL_OPENING_OFFSET)
+            return VOL_SETTING_DEFAULTS[device_key]
+
         ov = self._matrix_override or {}
         def _tbl(dim: str, device: str, default: dict) -> dict:
             sub = (ov.get(dim) or {}).get(device) or {}
@@ -199,8 +213,12 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             denon_max=_f(CONF_VOL_DENON_MAX),
             active_min=_f(CONF_VOL_ACTIVE_MIN),
             opening_offset=_f(CONF_VOL_OPENING_OFFSET),
+            opening_offset_homepods=_win(CONF_VOL_OPENING_OFFSET_HOMEPODS),
+            opening_offset_denon=_win(CONF_VOL_OPENING_OFFSET_DENON),
             boost_offset=_f(CONF_VOL_BOOST_OFFSET),
+            grind_homepods_offset=_f(CONF_GRIND_HOMEPODS_OFFSET),
             grind_denon_offset=_f(CONF_GRIND_DENON_OFFSET),
+            private_denon_cap=_f(CONF_PRIVATE_DENON_CAP),
             base_homepods=_tbl("base", "homepods", HOMEPODS_BASELINES),
             base_denon=_tbl("base", "denon", DENON_BASELINES),
             scenario_off_homepods=_tbl("scenario_off", "homepods", {}),
@@ -237,8 +255,14 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "ducked_target": s.ducked_target,
                 "homepods_max": s.homepods_max, "denon_max": s.denon_max,
                 "active_min": s.active_min,
-                "opening_offset": s.opening_offset, "boost_offset": s.boost_offset,
+                "opening_offset": s.opening_offset,
+                # control#3: Fenster-/Grind-Offsets je Gerät + Private-Cap.
+                "opening_offset_homepods": s.opening_offset_homepods,
+                "opening_offset_denon": s.opening_offset_denon,
+                "boost_offset": s.boost_offset,
+                "grind_homepods_offset": s.grind_homepods_offset,
                 "grind_denon_offset": s.grind_denon_offset,
+                "private_denon_cap": s.private_denon_cap,
             },
             "override": self._matrix_override or {},
         }

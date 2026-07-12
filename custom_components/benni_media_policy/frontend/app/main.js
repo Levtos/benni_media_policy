@@ -3,7 +3,33 @@
 // Step-1-Scaffold: bewusst nur eine Debug-Maske; die richtige UX folgt später.
 
 const WS_GET_STATUS = "benni_media_policy/get_status";
+const WS_GET_MATRIX = "benni_media_policy/get_matrix";
 const REFRESH_MS = 2000;
+
+// control#3: interne 0.0–1.0-Werte in der UX als Prozent/Prozentpunkte zeigen
+// (nie roher 0–1 unbeschriftet, keine dB-Beschriftung).
+function pctLevel(v) {
+  if (v === null || v === undefined || v === "") return '<span class="nullv">—</span>';
+  return `${Math.round(Number(v) * 100)} %`;
+}
+function pctOffset(v) {
+  if (v === null || v === undefined || v === "") return '<span class="nullv">—</span>';
+  const pp = Math.round(Number(v) * 100);
+  return `${pp > 0 ? "+" : ""}${pp} Prozentpunkte`;
+}
+// Offset-artige Skalare als Prozentpunkte, Pegel/Grenzen/Cap als Prozent.
+const _OFFSET_KEYS = /offset|nudge|boost/i;
+function pctScalar(key, v) {
+  return _OFFSET_KEYS.test(key) ? pctOffset(v) : pctLevel(v);
+}
+function scalarRows(scalars) {
+  const o = scalars || {};
+  const keys = Object.keys(o);
+  if (!keys.length) return `<tr><td class="v nullv" colspan="2">—</td></tr>`;
+  return keys
+    .map((k) => `<tr><td class="k">${esc(k)}</td><td class="v">${pctScalar(k, o[k])}</td></tr>`)
+    .join("");
+}
 
 const CSS = `
   :host { display:block; height:100%; background:#282a36; color:#f8f8f2;
@@ -79,6 +105,11 @@ class BmpApp extends HTMLElement {
     } catch (e) {
       this._error = (e && e.message) || String(e);
     }
+    try {
+      this._matrix = await this._hass.callWS({ type: WS_GET_MATRIX });
+    } catch (e) {
+      this._matrix = null;
+    }
     this._renderLive();
   }
 
@@ -115,6 +146,10 @@ class BmpApp extends HTMLElement {
       <div class="card">
         <h2>data (coordinator)</h2>
         <table>${rows(s.data)}</table>
+      </div>
+      <div class="card">
+        <h2>Volume-Matrix · Skalare (Prozent)</h2>
+        <table>${scalarRows(this._matrix && this._matrix.scalars)}</table>
       </div>
       <div class="card">
         <h2>bindings (Auto-Bind)</h2>

@@ -269,9 +269,17 @@ CONF_VOL_DUCKED_TARGET: Final[str] = "volume_ducked_target"
 CONF_VOL_HOMEPODS_MAX: Final[str] = "volume_homepods_max"
 CONF_VOL_DENON_MAX: Final[str] = "volume_denon_max"
 CONF_VOL_ACTIVE_MIN: Final[str] = "volume_active_min"
-CONF_VOL_OPENING_OFFSET: Final[str] = "volume_opening_offset"  # R17 fenster_offset
+CONF_VOL_OPENING_OFFSET: Final[str] = "volume_opening_offset"  # Legacy (Migration → per-Gerät)
+# control#3: Fenster-Offset je Gerät getrennt (gekippt == offen; geschlossen = 0).
+CONF_VOL_OPENING_OFFSET_HOMEPODS: Final[str] = "volume_opening_offset_homepods"
+CONF_VOL_OPENING_OFFSET_DENON: Final[str] = "volume_opening_offset_denon"
 CONF_VOL_BOOST_OFFSET: Final[str] = "volume_boost_offset"      # R18 Track-Boost
+# control#3: Grind-Offset je Gerät (HomePods 0, Denon −0.10). Ersetzt den einen
+# versteckten Skalar; persistent + editierbar.
+CONF_GRIND_HOMEPODS_OFFSET: Final[str] = "grind_homepods_offset"
 CONF_GRIND_DENON_OFFSET: Final[str] = "grind_denon_offset"     # R17 szenario_offset (Grind)
+# control#3: Private-Time-Denon-Cap (Ceiling; min(normal, cap), Nudge-fest).
+CONF_PRIVATE_DENON_CAP: Final[str] = "private_denon_cap"
 
 DEFAULT_VOL_HOMEPODS_BASE: Final = 0.35
 DEFAULT_VOL_DENON_BASE: Final = 0.40
@@ -279,10 +287,15 @@ DEFAULT_VOL_DUCKED_TARGET: Final = 0.15
 DEFAULT_VOL_HOMEPODS_MAX: Final = 0.65
 DEFAULT_VOL_DENON_MAX: Final = 0.70
 DEFAULT_VOL_ACTIVE_MIN: Final = 0.05
-DEFAULT_VOL_OPENING_OFFSET: Final = -0.05
+DEFAULT_VOL_OPENING_OFFSET: Final = -0.05          # Legacy-Default (Migrationsquelle)
+DEFAULT_VOL_OPENING_OFFSET_HOMEPODS: Final = -0.05
+DEFAULT_VOL_OPENING_OFFSET_DENON: Final = -0.05
 DEFAULT_VOL_BOOST_OFFSET: Final = 0.15
-# GRIND-Delta (R15/R16/§6): Denon als Hintergrund-Kulisse, −0.10…−0.15.
-DEFAULT_GRIND_DENON_OFFSET: Final = -0.12
+# GRIND-Delta (control#3): HomePods normal (0), Denon leise Kulisse (−0.10).
+DEFAULT_GRIND_HOMEPODS_OFFSET: Final = 0.0
+DEFAULT_GRIND_DENON_OFFSET: Final = -0.10
+# Private-Time-Denon-Cap-Default (kein Migrationswert ableitbar → 0.15).
+DEFAULT_PRIVATE_DENON_CAP: Final = 0.15
 
 VOL_SETTING_DEFAULTS: Final[dict[str, float]] = {
     CONF_VOL_HOMEPODS_BASE: DEFAULT_VOL_HOMEPODS_BASE,
@@ -292,8 +305,12 @@ VOL_SETTING_DEFAULTS: Final[dict[str, float]] = {
     CONF_VOL_DENON_MAX: DEFAULT_VOL_DENON_MAX,
     CONF_VOL_ACTIVE_MIN: DEFAULT_VOL_ACTIVE_MIN,
     CONF_VOL_OPENING_OFFSET: DEFAULT_VOL_OPENING_OFFSET,
+    CONF_VOL_OPENING_OFFSET_HOMEPODS: DEFAULT_VOL_OPENING_OFFSET_HOMEPODS,
+    CONF_VOL_OPENING_OFFSET_DENON: DEFAULT_VOL_OPENING_OFFSET_DENON,
     CONF_VOL_BOOST_OFFSET: DEFAULT_VOL_BOOST_OFFSET,
+    CONF_GRIND_HOMEPODS_OFFSET: DEFAULT_GRIND_HOMEPODS_OFFSET,
     CONF_GRIND_DENON_OFFSET: DEFAULT_GRIND_DENON_OFFSET,
+    CONF_PRIVATE_DENON_CAP: DEFAULT_PRIVATE_DENON_CAP,
 }
 
 # --------------------------------------------------------------------------- #
