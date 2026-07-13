@@ -22,6 +22,7 @@ from .const import (
     WS_RESET_MATRIX,
     WS_RESET_NUDGE,
     WS_SET_MATRIX,
+    WS_SET_SCALARS,
 )
 
 
@@ -41,6 +42,9 @@ def _status(coord) -> dict[str, Any]:
         "bindings": coord.bindings(),
         "data": dict(coord.data or {}),
         "debug": coord.debug(),
+        # control#3: reicher Snapshot inkl. volume_formula-Breakdown + reasons
+        # fürs Diagnose-Panel (Rechenweg je Gerät sichtbar).
+        "status": coord.status(),
     }
 
 
@@ -90,6 +94,21 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
 
     @websocket_api.websocket_command(
         {
+            vol.Required("type"): WS_SET_SCALARS,
+            vol.Required("patch"): dict,
+        }
+    )
+    @websocket_api.async_response
+    async def ws_set_scalars(hass, connection, msg) -> None:
+        coord = _coordinator(hass)
+        if coord is None:
+            connection.send_error(msg["id"], "not_ready", "Media Policy not loaded")
+            return
+        result = await coord.async_set_scalars(msg["patch"])
+        connection.send_result(msg["id"], result)
+
+    @websocket_api.websocket_command(
+        {
             vol.Required("type"): WS_NUDGE_VOLUME,
             vol.Required("delta"): vol.Coerce(float),
         }
@@ -127,6 +146,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_get_matrix)
     websocket_api.async_register_command(hass, ws_set_matrix)
     websocket_api.async_register_command(hass, ws_reset_matrix)
+    websocket_api.async_register_command(hass, ws_set_scalars)
     websocket_api.async_register_command(hass, ws_nudge_volume)
     websocket_api.async_register_command(hass, ws_reset_nudge)
     websocket_api.async_register_command(hass, ws_reset_boost)

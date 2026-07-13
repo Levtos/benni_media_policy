@@ -297,6 +297,18 @@ DEFAULT_GRIND_DENON_OFFSET: Final = -0.10
 # Private-Time-Denon-Cap-Default (kein Migrationswert ableitbar → 0.15).
 DEFAULT_PRIVATE_DENON_CAP: Final = 0.15
 
+# control#3: Über das Matrix-Panel editierbare Skalare. Schreiben in dieselben
+# ConfigEntry-Options wie der Options-Flow → EINE persistente Quelle. Der
+# Legacy-Skalar volume_opening_offset ist bewusst NICHT dabei (per-Gerät ersetzt).
+PANEL_SCALAR_KEYS: Final[tuple[str, ...]] = (
+    "volume_homepods_base", "volume_denon_base",
+    "volume_ducked_target", "volume_homepods_max", "volume_denon_max",
+    "volume_active_min", "volume_boost_offset",
+    "volume_opening_offset_homepods", "volume_opening_offset_denon",
+    "grind_homepods_offset", "grind_denon_offset",
+    "private_denon_cap",
+)
+
 VOL_SETTING_DEFAULTS: Final[dict[str, float]] = {
     CONF_VOL_HOMEPODS_BASE: DEFAULT_VOL_HOMEPODS_BASE,
     CONF_VOL_DENON_BASE: DEFAULT_VOL_DENON_BASE,
@@ -363,6 +375,9 @@ WS_GET_STATUS: Final[str] = f"{DOMAIN}/get_status"
 WS_GET_MATRIX: Final[str] = f"{DOMAIN}/get_matrix"
 WS_SET_MATRIX: Final[str] = f"{DOMAIN}/set_matrix"
 WS_RESET_MATRIX: Final[str] = f"{DOMAIN}/reset_matrix"
+# control#3: Skalare (Grind/Fenster/Cap/…) aus dem Panel setzen — schreibt in
+# DIESELBEN ConfigEntry-Options wie der Options-Flow (eine Quelle, keine Dopplung).
+WS_SET_SCALARS: Final[str] = f"{DOMAIN}/set_scalars"
 # R21/R22 Nudge-Steuerung (Laufzeit, Cockpit-Quick-Actions).
 WS_NUDGE_VOLUME: Final[str] = f"{DOMAIN}/nudge_volume"
 WS_RESET_NUDGE: Final[str] = f"{DOMAIN}/reset_nudge"

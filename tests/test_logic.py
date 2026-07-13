@@ -879,3 +879,42 @@ def test_private_cap_only_affects_denon_path():
     s = _settings(private_denon_cap=0.15)
     d, _ = _decide(_inp(context=C.CTX_TV, day_state="afternoon"), settings=s)
     assert d.volume_target_denon == 0.30  # TV-Owner, kein Private-Cap
+
+
+# ------------------------------- control#3: sanitize_scalar_patch (Panel→Options)
+_RANGES = {
+    "grind_denon_offset": (-1.0, 1.0),
+    "grind_homepods_offset": (-1.0, 1.0),
+    "volume_opening_offset_denon": (-1.0, 1.0),
+    "private_denon_cap": (0.0, 1.0),
+    "volume_homepods_max": (0.0, 1.0),
+}
+
+
+def test_sanitize_scalar_keeps_known_clamps_rounds():
+    out = L.sanitize_scalar_patch(
+        {"grind_denon_offset": -0.123456, "private_denon_cap": 0.2}, _RANGES)
+    assert out == {"grind_denon_offset": -0.123, "private_denon_cap": 0.2}
+
+
+def test_sanitize_scalar_drops_unknown_keys():
+    out = L.sanitize_scalar_patch({"totally_unknown": 0.5, "grind_denon_offset": 0.0}, _RANGES)
+    assert out == {"grind_denon_offset": 0.0}
+
+
+def test_sanitize_scalar_clamps_offset_and_level_ranges():
+    out = L.sanitize_scalar_patch(
+        {"grind_homepods_offset": -5.0, "private_denon_cap": 9.0, "volume_homepods_max": -3.0},
+        _RANGES)
+    assert out["grind_homepods_offset"] == -1.0   # offset floor
+    assert out["private_denon_cap"] == 1.0         # level ceiling
+    assert out["volume_homepods_max"] == 0.0       # level floor
+
+
+def test_sanitize_scalar_ignores_non_numeric_and_non_dict():
+    assert L.sanitize_scalar_patch({"grind_denon_offset": "abc"}, _RANGES) == {}
+    assert L.sanitize_scalar_patch(None, _RANGES) == {}
+
+
+def test_sanitize_scalar_empty_patch_is_empty():
+    assert L.sanitize_scalar_patch({}, _RANGES) == {}

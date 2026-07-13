@@ -79,6 +79,7 @@ from .const import (
     MUSIC_ENUM_BOOST,
     NUDGE_MAX,
     NUDGE_MIN,
+    PANEL_SCALAR_KEYS,
     PROFILE_PREFILL,
     PROFILES,
     VOL_SETTING_DEFAULTS,
@@ -117,6 +118,13 @@ def _opt_int(s: str | None) -> int | None:
 
 class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Eine Instanz pro Config-Entry (Single-Instance-Modell)."""
+
+    # control#3: Clamp-Bereiche der panel-editierbaren Skalare. Offsets ±1,
+    # Pegel/Grenzen/Cap 0…1. Deckt sich mit dem config_flow-Coerce (±1).
+    _PANEL_SCALAR_RANGES: dict[str, tuple[float, float]] = {
+        key: ((-1.0, 1.0) if "offset" in key else (0.0, 1.0))
+        for key in PANEL_SCALAR_KEYS
+    }
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
@@ -293,6 +301,19 @@ class MediaPolicyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._matrix_override = {}
         await self._matrix_store.async_save({})
         self.async_set_updated_data(self._compute())
+        return self.matrix()
+
+    # ----- control#3: Skalare aus dem Panel → ConfigEntry-Options -----
+    async def async_set_scalars(self, patch: dict[str, Any]) -> dict[str, Any]:
+        """Skalare (Grind/Fenster/Cap/…) aus dem Panel setzen. Schreibt in
+        DIESELBEN ConfigEntry-Options wie der Options-Flow → eine persistente
+        Quelle, kein Frontend-only-State. Offsets clampen auf [-1,1], Pegel/
+        Grenzen/Cap auf [0,1]. Der Options-Update triggert den Reload-Listener,
+        der die neuen settings() übernimmt. Gibt die neue Matrix zurück."""
+        clean = logic.sanitize_scalar_patch(patch, self._PANEL_SCALAR_RANGES)
+        if clean:
+            new_options = {**self.entry.options, **clean}
+            self.hass.config_entries.async_update_entry(self.entry, options=new_options)
         return self.matrix()
 
     # ----- lifecycle -----

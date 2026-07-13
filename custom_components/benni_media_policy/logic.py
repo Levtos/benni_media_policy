@@ -771,6 +771,27 @@ MATRIX_DIMS: tuple[str, ...] = ("base", "scenario_off", "activity_off")
 MATRIX_DEVICES: tuple[str, ...] = ("homepods", "denon")
 
 
+def sanitize_scalar_patch(
+    patch: dict[str, Any], ranges: dict[str, tuple[float, float]]
+) -> dict[str, Any]:
+    """control#3: Panel-Skalar-Patch säubern (pure). Nur Keys aus ``ranges``
+    werden übernommen, jeweils auf ihr [lo, hi] geclamped und auf 3 gerundet.
+    Unbekannte/ungültige Werte werden still verworfen (fail-safe). Das Ergebnis
+    schreibt der Coordinator in die ConfigEntry-Options (gleiche Quelle wie der
+    Options-Flow)."""
+    out: dict[str, Any] = {}
+    if not isinstance(patch, dict):
+        return out
+    for key, (lo, hi) in ranges.items():
+        if key not in patch:
+            continue
+        try:
+            out[key] = round(max(lo, min(hi, float(patch[key]))), 3)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def apply_matrix_patch(
     override: dict[str, Any], patch: dict[str, Any]
 ) -> dict[str, Any]:
