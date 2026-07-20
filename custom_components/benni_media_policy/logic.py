@@ -41,7 +41,6 @@ from .const import (
     AUDIO_OWNER_HOMEPODS,
     AUDIO_OWNER_NONE,
     AUDIO_OWNER_PRIVATE,
-    AUDIO_OWNER_SLEEP,
     AUDIO_OWNER_TV_DENON,
     AUDIO_SCENARIO_GAMING,
     AUDIO_SCENARIO_LABELS,
@@ -82,7 +81,6 @@ from .const import (
     VOL_POLICY_DUCKED,
     VOL_POLICY_IDLE,
     VOL_POLICY_MEDIA,
-    VOL_POLICY_MUTED,
 )
 
 
@@ -248,21 +246,15 @@ class PolicyDecision:
 # --------------------------------------------------------------------------- #
 def decide_owner(inp: Inputs) -> tuple[str, str]:
     """audio_owner + Label aus dem Context. Priorität wie Lastenheft:
-    sleep > private_time > gaming > streaming/tv > homepods > none.
+    private_time > gaming > streaming/tv > homepods > none.
 
-    FLEET-221: `bio_sleep` bekommt den EIGENEN Owner `sleep` (nicht mehr
-    `private_stack`). Beide verdrängen die HomePods (competes) und ergeben
-    Szenario off, aber Schlaf ≠ Privat-Session — das gemeinsame Label führte in
-    die Irre (owner=private_stack über Nacht ohne Stash). Reine Benennung, kein
-    Routing-Impact (bio_sleep → decide_volume MUTED, decide_action pause).
+    control#45: `bio_sleep` ist ein HomePods-Modifier, kein globales Owner-Gate.
 
     WICHTIG (FLEET-81 / FLEET-31): `quiet_mode` gehört hier NICHT rein. Quiet (Tür/
     Anruf, R20) ist ein reines Volume-Overlay (decide_volume duckt auf ducked_target),
     KEIN Owner/Szenario. Früher koppelte quiet→PRIVATE → competes → pause_homepods
     UND hp_plays=False → Ducked-HomePods=0.0 statt 0.10 (= „Wiedergabe komplett
     gestoppt"). CTX_PRIVATE ist das echte Privat-Szenario."""
-    if inp.bio_sleep:
-        return AUDIO_OWNER_SLEEP, "sleep"
     if inp.context == CTX_PRIVATE:
         return AUDIO_OWNER_PRIVATE, "private_time"
     if inp.context == CTX_GAMING:
@@ -285,9 +277,7 @@ def decide_audio_scenario(
     owner == NONE (HomePods spielen gerade nicht) ergibt NICHT idle, sondern
     music. Quiet bleibt ein Volume-Overlay (decide_volume → ducked), KEIN
     Szenario — die Umbrella komponiert das Leise-Badge aus quiet_mode."""
-    if inp.bio_sleep:
-        scenario, detail = AUDIO_SCENARIO_OFF, None
-    elif owner == AUDIO_OWNER_PRIVATE:
+    if owner == AUDIO_OWNER_PRIVATE:
         scenario, detail = AUDIO_SCENARIO_PRIVATE, None
     elif owner == AUDIO_OWNER_GAMING or grind:
         scenario, detail = AUDIO_SCENARIO_GAMING, (inp.device or None)
@@ -340,12 +330,11 @@ def is_pc_gaming(inp: Inputs) -> bool:
 def competes_with_homepods(owner: str, grind: bool, pc_gaming: bool = False) -> bool:
     """Stack, der die HomePods verdrängt. GRIND hat HomePods-Anteil (R15) →
     konkurriert NICHT, HomePods spielen weiter. PC-Gaming (FLEET-101) ebenso:
-    Game-Audio ist im Headset, Raum-Musik läuft weiter. Sleep (FLEET-221) zählt
-    wie private: HomePods pausieren beim Einschlafen (R25)."""
+    Game-Audio ist im Headset, Raum-Musik läuft weiter. Schlaf wird unabhängig
+    vom Owner am Aufrufort als HomePods-Block ergänzt (control#45/R25)."""
     if grind or pc_gaming:
         return False
     return owner in (
-        AUDIO_OWNER_SLEEP,
         AUDIO_OWNER_PRIVATE,
         AUDIO_OWNER_GAMING,
         AUDIO_OWNER_TV_DENON,
@@ -597,10 +586,6 @@ def decide_volume(
     if not inp.homepods_configured and not inp.denon_configured:
         return VOL_POLICY_BLOCKED, None, None, False, "no_speakers_configured", False, False
 
-    # 2. Muted: bio sleep (R25 — HomePods aus).
-    if inp.bio_sleep:
-        return VOL_POLICY_MUTED, None, None, False, "bio_sleep_muted", False, False
-
     # ---- Routing: welche Seite spielt? PC-Gaming (FLEET-101) → HomePods normal,
     # Denon aus (Game-Audio im Headset). GRIND → beide (HomePods dominant). ----
     pc_gaming = is_pc_gaming(inp)
@@ -618,6 +603,11 @@ def decide_volume(
         hp_plays, dn_plays = False, True
     else:  # NONE
         hp_plays, dn_plays = False, False
+
+    # R25/control#45: Schlaf schaltet nur das HomePods-Bein stumm. Denon läuft
+    # unverändert durch Tagesphase, Matrix und Caps.
+    if inp.bio_sleep:
+        hp_plays = False
 
     # control#3: Fenster-Offset je Gerät (gekippt == offen; geschlossen = 0).
     # opening_any_open kommt aus dem dreistufigen core_devices-Master (any_not_
@@ -715,6 +705,8 @@ def volume_breakdown(
         hp_plays, dn_plays = False, True
     else:
         hp_plays, dn_plays = False, False
+    if inp.bio_sleep:
+        hp_plays = False
     boost_flag = hp_plays and boost_active(inp)
     is_private = owner == AUDIO_OWNER_PRIVATE
 
@@ -972,7 +964,7 @@ def decide(
     reasons.append(f"scenario:{scenario}")
 
     baseline_candidate = music_baseline_candidate(inp, owner, grind)
-    competes = competes_with_homepods(owner, grind, pc_gaming)
+    competes = competes_with_homepods(owner, grind, pc_gaming) or inp.bio_sleep
     action, should_pause, resume_allowed, action_reason, new_state = decide_action(
         inp, owner, competes, state, baseline_candidate
     )
@@ -1000,7 +992,12 @@ def decide(
     # bleibt eigener Zweig (hart 0.10, unberührt). Idle ist Geräte-Sache
     # (pause/resume via action), nicht Volume → kein Ramp-Down (OQ-1).
     hp_on_path = baseline_active or pc_gaming or grind or owner == AUDIO_OWNER_HOMEPODS
-    if policy == VOL_POLICY_MEDIA and hp_on_path and hp is not None:
+    if (
+        policy == VOL_POLICY_MEDIA
+        and hp_on_path
+        and hp is not None
+        and not inp.bio_sleep
+    ):
         new_state.last_hp_media_target = hp
     elif policy == VOL_POLICY_MEDIA and not hp_on_path:
         new_state.last_hp_media_target = None
@@ -1008,6 +1005,7 @@ def decide(
         policy == VOL_POLICY_IDLE
         and inp.homepods_configured
         and new_state.last_hp_media_target is not None
+        and not inp.bio_sleep
     ):
         hp = new_state.last_hp_media_target
         vol_reason = "idle_sticky_homepods"
