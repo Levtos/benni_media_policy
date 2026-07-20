@@ -41,7 +41,6 @@ from .const import (
     AUDIO_OWNER_HOMEPODS,
     AUDIO_OWNER_NONE,
     AUDIO_OWNER_PRIVATE,
-    AUDIO_OWNER_SLEEP,
     AUDIO_OWNER_TV_DENON,
     AUDIO_SCENARIO_GAMING,
     AUDIO_SCENARIO_LABELS,
@@ -82,7 +81,6 @@ from .const import (
     VOL_POLICY_DUCKED,
     VOL_POLICY_IDLE,
     VOL_POLICY_MEDIA,
-    VOL_POLICY_MUTED,
 )
 
 
@@ -248,21 +246,19 @@ class PolicyDecision:
 # --------------------------------------------------------------------------- #
 def decide_owner(inp: Inputs) -> tuple[str, str]:
     """audio_owner + Label aus dem Context. Priorität wie Lastenheft:
-    sleep > private_time > gaming > streaming/tv > homepods > none.
+    private_time > gaming > streaming/tv > homepods > none.
 
-    FLEET-221: `bio_sleep` bekommt den EIGENEN Owner `sleep` (nicht mehr
-    `private_stack`). Beide verdrängen die HomePods (competes) und ergeben
-    Szenario off, aber Schlaf ≠ Privat-Session — das gemeinsame Label führte in
-    die Irre (owner=private_stack über Nacht ohne Stash). Reine Benennung, kein
-    Routing-Impact (bio_sleep → decide_volume MUTED, decide_action pause).
+    control#45: `bio_sleep` ist KEIN Owner-Gate mehr. Der Owner wird 24/7 aus dem
+    tatsächlichen Kontext berechnet (die Volume-/Action-Logik behandelt Schlaf als
+    Modifier: HomePods-Bein stumm + Pause, Denon-Bein volle Matrix). Der frühere
+    `AUDIO_OWNER_SLEEP`-Kurzschluss (FLEET-221) überschrieb fälschlich auch aktive
+    TV-/Gaming-/Private-Sessions und ist entfernt; die Konstante bleibt als Legacy.
 
     WICHTIG (FLEET-81 / FLEET-31): `quiet_mode` gehört hier NICHT rein. Quiet (Tür/
     Anruf, R20) ist ein reines Volume-Overlay (decide_volume duckt auf ducked_target),
     KEIN Owner/Szenario. Früher koppelte quiet→PRIVATE → competes → pause_homepods
     UND hp_plays=False → Ducked-HomePods=0.0 statt 0.10 (= „Wiedergabe komplett
     gestoppt"). CTX_PRIVATE ist das echte Privat-Szenario."""
-    if inp.bio_sleep:
-        return AUDIO_OWNER_SLEEP, "sleep"
     if inp.context == CTX_PRIVATE:
         return AUDIO_OWNER_PRIVATE, "private_time"
     if inp.context == CTX_GAMING:
@@ -285,9 +281,10 @@ def decide_audio_scenario(
     owner == NONE (HomePods spielen gerade nicht) ergibt NICHT idle, sondern
     music. Quiet bleibt ein Volume-Overlay (decide_volume → ducked), KEIN
     Szenario — die Umbrella komponiert das Leise-Badge aus quiet_mode."""
-    if inp.bio_sleep:
-        scenario, detail = AUDIO_SCENARIO_OFF, None
-    elif owner == AUDIO_OWNER_PRIVATE:
+    # control#45: `bio_sleep` überschreibt das Szenario NICHT mehr (kein globales
+    # Gate). Das Szenario spiegelt 24/7 den echten Kontext; Schlaf wirkt nur auf
+    # das HomePods-Bein (stumm + Pause in Volume/Action).
+    if owner == AUDIO_OWNER_PRIVATE:
         scenario, detail = AUDIO_SCENARIO_PRIVATE, None
     elif owner == AUDIO_OWNER_GAMING or grind:
         scenario, detail = AUDIO_SCENARIO_GAMING, (inp.device or None)
@@ -340,16 +337,29 @@ def is_pc_gaming(inp: Inputs) -> bool:
 def competes_with_homepods(owner: str, grind: bool, pc_gaming: bool = False) -> bool:
     """Stack, der die HomePods verdrängt. GRIND hat HomePods-Anteil (R15) →
     konkurriert NICHT, HomePods spielen weiter. PC-Gaming (FLEET-101) ebenso:
-    Game-Audio ist im Headset, Raum-Musik läuft weiter. Sleep (FLEET-221) zählt
-    wie private: HomePods pausieren beim Einschlafen (R25)."""
+    Game-Audio ist im Headset, Raum-Musik läuft weiter.
+
+    control#45: `bio_sleep` ist hier NICHT mehr über einen SLEEP-Owner kodiert.
+    Die Schlaf-Verdrängung der HomePods (R25) hängt jetzt am `bio_sleep`-Input
+    selbst und wird am Aufrufort dazugeODERt (`competes = … or bio_sleep`), damit
+    HomePods im Schlaf pausiert UND bei erneuter Aktivierung re-pausiert werden."""
     if grind or pc_gaming:
         return False
     return owner in (
-        AUDIO_OWNER_SLEEP,
         AUDIO_OWNER_PRIVATE,
         AUDIO_OWNER_GAMING,
         AUDIO_OWNER_TV_DENON,
     )
+
+
+def resume_blocked_by_sleep(inp: Inputs) -> bool:
+    """control#45 / R25: Auto-Resume existiert NUR im `awake`-Kontext. Während
+    `sleep` UND `waking` bleibt jeder automatische Resume/Radio-Start gesperrt
+    (fortgesetzte Musik würde den Schlaf stören). `wake_needed` allein (Planer-
+    Flag, kann im Wachzustand anliegen) gehört NICHT dazu."""
+    if inp.bio_sleep:
+        return True
+    return (inp.bio_state or "").strip().lower() == "waking"
 
 
 def _wake_sequence_active(inp: Inputs) -> bool:
@@ -500,8 +510,9 @@ def decide_action(
         reason = "competing_stack_active"
     else:
         # Kein konkurrierender Stack (oder GRIND) → Resume/Radio prüfen.
-        if inp.bio_sleep:
-            reason = "bio_sleep_blocks_resume"
+        if resume_blocked_by_sleep(inp):
+            # control#45 / R25: kein Auto-Resume in sleep ODER waking.
+            reason = "sleep_or_waking_blocks_resume"
         elif new_state.manual_stop:
             reason = "manual_stop_blocks_resume"
         elif presence_holds_resume(inp):
@@ -597,9 +608,14 @@ def decide_volume(
     if not inp.homepods_configured and not inp.denon_configured:
         return VOL_POLICY_BLOCKED, None, None, False, "no_speakers_configured", False, False
 
-    # 2. Muted: bio sleep (R25 — HomePods aus).
-    if inp.bio_sleep:
-        return VOL_POLICY_MUTED, None, None, False, "bio_sleep_muted", False, False
+    # 2. control#45 / R25: bio_sleep ist KEIN globales Volume-Gate mehr. Es senkt
+    # AUSSCHLIESSLICH das HomePods-Bein auf stumm — als Ziel `None` (kein Geräte-
+    # Write; die FLEET-153-Sticky/Resume-Erinnerung bleibt erhalten; die Stille
+    # kommt aus der Pause-Action, nicht aus einem Volume-Write). Das Denon-Bein
+    # wird 24/7 aus der Matrix berechnet (Nacht-Baseline steckt in den Tagesphasen-
+    # Baselines, Caps greifen weiter). `hp_muted_sleep` überschreibt das HomePods-
+    # Ziel unten in JEDEM Zweig auf None.
+    hp_muted_sleep = inp.bio_sleep
 
     # ---- Routing: welche Seite spielt? PC-Gaming (FLEET-101) → HomePods normal,
     # Denon aus (Game-Audio im Headset). GRIND → beide (HomePods dominant). ----
@@ -632,6 +648,8 @@ def decide_volume(
             hp = round(_clamp(s.ducked_target, 0.0, s.homepods_max), 3) if hp_plays else 0.0
         if inp.denon_configured:
             dn = round(_clamp(s.ducked_target, 0.0, s.denon_max), 3) if dn_plays else 0.0
+        if hp_muted_sleep:
+            hp = None   # HomePods-Bein im Schlaf stumm (kein Write) — Denon duckt weiter.
         return VOL_POLICY_DUCKED, hp, dn, True, "quiet_mode_ducked", False, False
 
     # 4. Idle: kein Owner und kein Grind (aber NICHT wenn die Baseline gerade
@@ -639,11 +657,13 @@ def decide_volume(
     if owner == AUDIO_OWNER_NONE and not grind and not music_baseline:
         hp = 0.0 if inp.homepods_configured else None
         dn = 0.0 if inp.denon_configured else None
+        if hp_muted_sleep:
+            hp = None   # Idle im Schlaf: HomePods-Bein kein Write (Ruhewert bleibt).
         return VOL_POLICY_IDLE, hp, dn, True, "idle_no_owner", False, False
 
     # 5. Media: R17-Formel mit Dayphase-Baselines + Boost/Mute.
-    boost_flag = hp_plays and boost_active(inp)
-    muted_flag = hp_plays and music_muted(inp)
+    boost_flag = hp_plays and not hp_muted_sleep and boost_active(inp)
+    muted_flag = hp_plays and not hp_muted_sleep and music_muted(inp)
 
     hp = dn = None
     if inp.homepods_configured:
@@ -663,6 +683,9 @@ def decide_volume(
                 boost=s.boost_offset if boost_flag else 0.0,
                 active_min=s.active_min, hard_max=s.homepods_max,
             )
+    if hp_muted_sleep:
+        hp = None   # HomePods im Schlaf stumm: kein Ziel/Write; Pause-Action sorgt
+        #             für Stille, die Sticky/Resume-Erinnerung bleibt unberührt.
     if inp.denon_configured:
         if not dn_plays:
             dn = 0.0
@@ -972,7 +995,10 @@ def decide(
     reasons.append(f"scenario:{scenario}")
 
     baseline_candidate = music_baseline_candidate(inp, owner, grind)
-    competes = competes_with_homepods(owner, grind, pc_gaming)
+    # control#45 / R25: `bio_sleep` verdrängt die HomePods wie ein konkurrierender
+    # Stack (Pause + Re-Pause bei erneutem Start), ohne einen SLEEP-Owner. Der
+    # Denon-Pfad bleibt davon unberührt und läuft 24/7 durch die Matrix.
+    competes = competes_with_homepods(owner, grind, pc_gaming) or inp.bio_sleep
     action, should_pause, resume_allowed, action_reason, new_state = decide_action(
         inp, owner, competes, state, baseline_candidate
     )
@@ -1008,6 +1034,10 @@ def decide(
         policy == VOL_POLICY_IDLE
         and inp.homepods_configured
         and new_state.last_hp_media_target is not None
+        # control#45 / R25: im Schlaf bleibt das HomePods-Bein stumm (Ziel None,
+        # kein Write) — der Idle-Sticky-Hold darf ihn hier NICHT reaktivieren. Die
+        # Erinnerung selbst bleibt erhalten (für den Awake-Resume).
+        and not inp.bio_sleep
     ):
         hp = new_state.last_hp_media_target
         vol_reason = "idle_sticky_homepods"
