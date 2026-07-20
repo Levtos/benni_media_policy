@@ -42,25 +42,21 @@ def test_owner_gaming():
 
 
 def test_owner_private_via_context_sleep_separate_not_quiet():
-    # FLEET-221: private_time-Context → PRIVATE, bio_sleep → eigener SLEEP-Owner
-    # (nicht mehr private_stack); quiet_mode allein NICHT (FLEET-81: Quiet ist
-    # Volume-Overlay, kein Owner — koppelte früher fälschlich → pause).
+    # control#45: bio_sleep ist kein Owner-Gate; quiet bleibt Volume-Overlay.
     assert _decide(_inp(context=C.CTX_PRIVATE))[0].audio_owner == C.AUDIO_OWNER_PRIVATE
-    assert _decide(_inp(bio_sleep=True))[0].audio_owner == C.AUDIO_OWNER_SLEEP
+    assert _decide(_inp(bio_sleep=True))[0].audio_owner == C.AUDIO_OWNER_NONE
     # Quiet bei spielenden HomePods → Owner bleibt HOMEPODS (kein PRIVATE/pause).
     assert _decide(_inp(quiet_mode=True, homepods_state="playing"))[0].audio_owner == C.AUDIO_OWNER_HOMEPODS
 
 
-def test_sleep_owner_still_competes_and_mutes():
-    # FLEET-221: das neue SLEEP-Label ändert das Verhalten NICHT — HomePods
-    # pausieren beim Einschlafen (competes) und Volume ist gemutet (R25).
+def test_sleep_pauses_homepods_without_hiding_real_owner_or_scenario():
     d, _ = _decide(_inp(bio_sleep=True, homepods_state="playing"))
-    assert d.audio_owner == C.AUDIO_OWNER_SLEEP
-    assert d.owner_reason == "sleep"
+    assert d.audio_owner == C.AUDIO_OWNER_HOMEPODS
+    assert d.audio_scenario == C.AUDIO_SCENARIO_MUSIC
     assert d.action == C.ACTION_PAUSE
     assert d.homepods_should_pause is True
-    assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
-    assert d.volume_policy == C.VOL_POLICY_MUTED
+    assert d.volume_target_homepods == 0.0
+    assert d.volume_apply_allowed is True
 
 
 def test_quiet_ducks_homepods_not_pause_fleet81():
@@ -116,12 +112,12 @@ def test_volume_blocked_no_speakers():
     assert d.volume_apply_allowed is False
 
 
-def test_volume_muted_bio_sleep():
-    d, _ = _decide(_inp(bio_sleep=True, context=C.CTX_TV))
-    assert d.volume_policy == C.VOL_POLICY_MUTED
-    assert d.volume_target_homepods is None
-    assert d.volume_target_denon is None
-    assert d.volume_apply_allowed is False
+def test_volume_sleep_blocks_only_homepods_leg():
+    d, _ = _decide(_inp(bio_sleep=True, context=C.CTX_TV, day_state="late_night"))
+    assert d.volume_policy == C.VOL_POLICY_MEDIA
+    assert d.volume_target_homepods == 0.0
+    assert d.volume_target_denon == 0.20
+    assert d.volume_apply_allowed is True
 
 
 def test_volume_ducked_quiet():
@@ -580,6 +576,23 @@ def test_volume_breakdown_reports_nudge():
     assert bd["denon"]["manual_nudge"] == 0.0  # spielt nicht → kein Nudge
 
 
+def test_volume_breakdown_matches_homepods_sleep_target():
+    inp = _inp(
+        bio_sleep=True,
+        homepods_state="playing",
+        day_state="afternoon",
+        homepods_music_enum=C.MUSIC_ENUM_BOOST,
+    )
+    d, _ = _decide(inp)
+    bd = L.volume_breakdown(inp, d.audio_owner, d.is_grind, L.VolumeSettings(),
+                            d.audio_scenario, d.music_baseline_active)
+    assert d.volume_target_homepods == 0.0
+    assert d.track_boost_applied is False
+    assert bd["homepods"]["plays"] is False
+    assert bd["homepods"]["result"] == 0.0
+    assert bd["homepods"]["track_boost"] == 0.0
+
+
 # ----------------------------------------- audio_scenario / Desired-Audio (FLEET-85)
 def test_scenario_idle_constellation_is_music_baseline():
     # Kein Owner, HomePods spielen nicht → trotzdem MUSIC (nicht idle). Der Fix.
@@ -627,11 +640,10 @@ def test_scenario_private_via_context():
     assert d.audio_scenario == C.AUDIO_SCENARIO_PRIVATE
 
 
-def test_scenario_off_when_bio_sleep():
-    # Sleep dominiert (R25) → off, auch wenn ein TV-Context anliegt.
+def test_scenario_reflects_context_when_bio_sleep():
     d, _ = _decide(_inp(bio_sleep=True, context=C.CTX_TV))
-    assert d.audio_scenario == C.AUDIO_SCENARIO_OFF
-    assert d.audio_scenario_label == "Aus"
+    assert d.audio_scenario == C.AUDIO_SCENARIO_TV
+    assert d.audio_scenario_label == "TV"
 
 
 def test_scenario_quiet_is_overlay_not_scenario():
@@ -918,3 +930,68 @@ def test_sanitize_scalar_ignores_non_numeric_and_non_dict():
 
 def test_sanitize_scalar_empty_patch_is_empty():
     assert L.sanitize_scalar_patch({}, _RANGES) == {}
+
+
+# ------------------------------------------------ control#45: 24/7 + R25
+def test_sleep_keeps_denon_matrix_and_safety_caps_for_all_contexts():
+    tv, _ = _decide(_inp(
+        bio_sleep=True, context=C.CTX_TV, day_state="afternoon",
+        opening_any_open=True,
+    ))
+    streaming, _ = _decide(_inp(
+        bio_sleep=True, context=C.CTX_STREAMING, day_state="late_night",
+    ))
+    gaming, _ = _decide(_inp(
+        bio_sleep=True, context=C.CTX_GAMING, device="ps5",
+        day_state="late_night",
+    ))
+    private, _ = _decide(_inp(
+        bio_sleep=True, context=C.CTX_PRIVATE, day_state="afternoon",
+    ))
+
+    assert (tv.audio_owner, tv.audio_scenario, tv.volume_target_denon) == (
+        C.AUDIO_OWNER_TV_DENON, C.AUDIO_SCENARIO_TV, 0.25)
+    assert streaming.volume_target_denon == 0.20
+    assert (gaming.audio_owner, gaming.audio_scenario,
+            gaming.volume_target_denon) == (
+        C.AUDIO_OWNER_GAMING, C.AUDIO_SCENARIO_GAMING, 0.20)
+    assert (private.audio_owner, private.audio_scenario,
+            private.volume_target_denon) == (
+        C.AUDIO_OWNER_PRIVATE, C.AUDIO_SCENARIO_PRIVATE, 0.15)
+    for decision in (tv, streaming, gaming, private):
+        assert decision.volume_target_homepods == 0.0
+        assert decision.volume_apply_allowed is True
+
+
+def test_sleep_repauses_homepods_preserves_sticky_and_resumes_when_waking():
+    _awake, s_awake = _decide(_inp(
+        homepods_state="playing", planned_radio_active=True,
+        day_state="afternoon",
+    ))
+    sleep_playing, s_sleep_playing = _decide(_inp(
+        bio_sleep=True, homepods_state="playing", planned_radio_active=True,
+        day_state="afternoon",
+    ), s_awake)
+    sleep_paused, s_sleep_paused = _decide(_inp(
+        bio_sleep=True, homepods_state="paused", planned_radio_active=True,
+        day_state="afternoon",
+    ), s_sleep_playing)
+    restarted, _ = _decide(_inp(
+        bio_sleep=True, homepods_state="playing", planned_radio_active=True,
+        day_state="afternoon",
+    ), s_sleep_paused)
+    waking, _ = _decide(_inp(
+        bio_state="waking", homepods_state="paused", planned_radio_active=True,
+        day_state="afternoon",
+    ), s_sleep_paused)
+
+    assert sleep_playing.action == C.ACTION_PAUSE
+    assert sleep_playing.volume_target_homepods == 0.0
+    assert sleep_paused.action == C.ACTION_NONE
+    assert sleep_paused.homepods_resume_allowed is False
+    assert s_sleep_paused.auto_paused is True
+    assert s_sleep_paused.last_hp_media_target == 0.45
+    assert restarted.action == C.ACTION_PAUSE
+    assert waking.action == C.ACTION_START_RADIO
+    assert waking.homepods_resume_allowed is True
+    assert waking.volume_target_homepods == 0.45
