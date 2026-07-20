@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.1 - bio_sleep als gezielter HomePods-Modifier (control#45)
+
+- Owner, Szenario und Volume Matrix werden auch bei `bio_sleep` aus dem tatsächlichen Medienkontext berechnet; TV, Streaming, Gaming und Private Time behalten Tagesphase, Matrix und Safety-Caps.
+- HomePods bleiben bei `bio_sleep` stumm und werden pausiert beziehungsweise erneut pausiert; Sticky-/Resume-Werte werden nicht durch das Sleep-Ziel überschrieben.
+- Diagnose-Breakdown und tatsächliches HomePods-Sleep-Verhalten sind synchron; `waking` behält die bestehende Semantik.
+- Der unabhängige Radio-Autostart wird in media-apply v0.16.2 sowohl beim Planen als auch unmittelbar vor dem verzögerten Start blockiert.
+- Keine Kontext-Whitelist und keine neue Session-Erkennung.
+
 ## 0.16.1 - system_-Slugs für Media-Presence/Away-Gate (FLEET-260)
 
 - **Fix falsche Bindungen (renamed-device `system_` Entity-IDs).** Die Defaults
