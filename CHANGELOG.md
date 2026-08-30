@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.2 - provisional_sleep als Consumer-Schlafkontext (#59)
+
+- `provisional_sleep` nutzt denselben HomePod-/Baseline-Sleep-Modifier wie
+  bestätigtes oder inferred `sleep`.
+- TV-/Streaming-/Gaming-Owner, Denon-Matrix und Safety-Caps bleiben erhalten;
+  PS/S erzeugt keinen automatischen HomePod-Start oder Awake-Resume.
+- Contract-/Regressionstest sichert die additive Bio-State-Erweiterung.
+
 ## 0.18.1 - bio_sleep als gezielter HomePods-Modifier (control#45)
 
 - Owner, Szenario und Volume Matrix werden auch bei `bio_sleep` aus dem tatsächlichen Medienkontext berechnet; TV, Streaming, Gaming und Private Time behalten Tagesphase, Matrix und Safety-Caps.

@@ -8,8 +8,17 @@ Konsumiert den Feeder
 über Entity-State** (kein Python-Import). Apply ist **gated** (Shadow-safe,
 Default aus) — wie `benni_light_policy`.
 
-**Status:** `0.1.0` — Step-1-Scaffold. Lauffähiges, leeres Skeleton (Hub +
-Auto-Bind + WS-Contract + Vanilla-Debug-Panel). **Keine Fachlogik portiert.**
+**Status:** `0.18.2` — aktive Media-Policy mit PS/S-Consumer-Contract.
+
+## PS/S sleep context (#59)
+
+`provisional_sleep` und `sleep` sind derselbe Consumer-Schlafkontext:
+automatische HomePod-Starts/Resumes werden gesperrt, laufende HomePods werden
+pausiert und das HomePod-Ziel bleibt 0. Der tatsächliche TV-/Streaming-/Gaming-
+Kontext, Audio-Owner, Denon-Matrix und Safety-Caps bleiben erhalten. Damit darf
+PS/S mit aktivem TV weiterhin `entertainment` abbilden, ohne eine
+Awake-Medienreaktion auszulösen. Herkunft und Bestätigung des Schlafs entscheidet
+ausschließlich Core State.
 
 ## Schicht
 
