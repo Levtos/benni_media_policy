@@ -80,7 +80,10 @@ ACTION_START_RADIO: Final = "start_radio"
 RESUME_MODE_MANUAL: Final = "manual"
 RESUME_MODE_RADIO: Final = "radio"
 
-BIO_SLEEP_VALUES: Final = ("sleep", "sleeping", "asleep")
+# Issue #59: provisional_sleep is the same consumer-side sleep context as S.
+# It remains a distinct Core-State lifecycle value; policy only consumes it as
+# the HomePod/baseline modifier and never turns it into Wake evidence.
+BIO_SLEEP_VALUES: Final = ("provisional_sleep", "sleep", "sleeping", "asleep")
 
 # --------------------------------------------------------------------------- #
 # Audio-Scenario — Desired-Audio-Wahrheit (FLEET-85). Immer aus der Konstellation

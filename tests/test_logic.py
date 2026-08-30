@@ -59,6 +59,18 @@ def test_sleep_pauses_homepods_without_hiding_real_owner_or_scenario():
     assert d.volume_apply_allowed is True
 
 
+def test_issue59_provisional_sleep_is_a_consumer_sleep_value():
+    assert "provisional_sleep" in C.BIO_SLEEP_VALUES
+    # The coordinator maps every value in BIO_SLEEP_VALUES to this existing
+    # modifier; the policy keeps the active TV owner/scenario unchanged.
+    d, _ = _decide(
+        _inp(bio_sleep=True, context=C.CTX_TV, homepods_state="playing")
+    )
+    assert d.audio_owner == C.AUDIO_OWNER_TV_DENON
+    assert d.audio_scenario == C.AUDIO_SCENARIO_TV
+    assert d.homepods_should_pause is True
+
+
 def test_quiet_ducks_homepods_not_pause_fleet81():
     # FLEET-81: Tür auf (quiet) bei spielenden HomePods → ducken, NICHT stoppen.
     d, _ = _decide(_inp(quiet_mode=True, homepods_state="playing"))
